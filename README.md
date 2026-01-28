@@ -93,7 +93,7 @@ docker run -d \
   --name myapp \
   --label bulwark.enabled=true \
   --label bulwark.policy=safe \
-  --label bulwark.definition=compose:/docker_data/myapp/docker-compose.yml:myapp \
+  --label bulwark.definition=compose:/docker_data/myapp/docker-compose.yml#service=myapp \
   --label bulwark.probe.type=tcp \
   --label bulwark.probe.tcp_host=localhost \
   --label bulwark.probe.tcp_port=8080 \
@@ -107,7 +107,7 @@ docker run -d \
 - `bulwark.enabled=true|false` - Enable Bulwark management (required)
 - `bulwark.policy=notify|safe|aggressive` - Update policy (default: safe)
 - `bulwark.tier=stateless|stateful` - Service tier (default: stateless)
-- `bulwark.definition=compose:<path>:<service>` - For loose containers
+- `bulwark.definition=compose:/abs/path/compose.yml#service=<service>` - For loose containers
 
 ### Probe Labels
 
