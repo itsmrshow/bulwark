@@ -48,7 +48,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create Docker client: %w", err)
 	}
-	defer dockerClient.Close()
+	defer func() { _ = dockerClient.Close() }()
 
 	registryClient := registry.NewClient(logger)
 	policyEngine := policy.NewEngine(logger)

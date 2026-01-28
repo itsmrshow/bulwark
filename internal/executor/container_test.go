@@ -37,7 +37,7 @@ func TestContainerExecutorDelegatesWithValidDefinition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmp.Name())
+	defer func() { _ = os.Remove(tmp.Name()) }()
 
 	definition := fmt.Sprintf("compose:%s#service=web", tmp.Name())
 	service := &state.Service{

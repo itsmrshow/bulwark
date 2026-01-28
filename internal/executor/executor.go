@@ -109,7 +109,7 @@ func (e *Executor) ExecuteUpdate(ctx context.Context, target *state.Target, serv
 	}
 
 	// Get new digest after update
-	actualNewDigest := newDigest
+	var actualNewDigest string
 	switch target.Type {
 	case state.TargetTypeCompose:
 		var err error
