@@ -38,8 +38,8 @@ type ComposeFile struct {
 
 // ComposeService represents a service in docker-compose.yml
 type ComposeService struct {
-	Image       string            `yaml:"image"`
-	Labels      map[string]string `yaml:"labels"`
+	Image       string             `yaml:"image"`
+	Labels      interface{}        `yaml:"labels"` // Can be map or array
 	HealthCheck *HealthCheckConfig `yaml:"healthcheck,omitempty"`
 }
 
@@ -112,10 +112,11 @@ func (s *ComposeScanner) parseComposeFile(ctx context.Context, composePath strin
 	}
 
 	// Create target
+	projectName := filepath.Base(filepath.Dir(composePath))
 	target := &state.Target{
-		ID:        generateComposeID(composePath),
+		ID:        state.GenerateTargetID(state.TargetTypeCompose, projectName, composePath),
 		Type:      state.TargetTypeCompose,
-		Name:      filepath.Base(filepath.Dir(composePath)),
+		Name:      projectName,
 		Path:      composePath,
 		Services:  []state.Service{},
 		Labels:    state.DefaultLabels(),
@@ -130,8 +131,11 @@ func (s *ComposeScanner) parseComposeFile(ctx context.Context, composePath strin
 			continue
 		}
 
+		// Convert labels to map[string]string (handles both map and array formats)
+		labelMap := convertLabelsToMap(composeService.Labels)
+
 		// Parse labels
-		labels := ParseLabels(composeService.Labels, composeService.Image)
+		labels := ParseLabels(labelMap, composeService.Image)
 
 		// Get current digest from Docker if container is running
 		digest := s.getCurrentDigest(ctx, target.Name, serviceName)
@@ -143,11 +147,15 @@ func (s *ComposeScanner) parseComposeFile(ctx context.Context, composePath strin
 		}
 
 		service := state.Service{
+			ID:            state.GenerateServiceID(target.ID, serviceName),
+			TargetID:      target.ID,
 			Name:          serviceName,
 			Image:         composeService.Image,
 			CurrentDigest: digest,
 			Labels:        labels,
 			HealthCheck:   healthCheck,
+			CreatedAt:     time.Now(),
+			UpdatedAt:     time.Now(),
 		}
 
 		target.Services = append(target.Services, service)
@@ -182,6 +190,47 @@ func (s *ComposeScanner) getCurrentDigest(ctx context.Context, projectName, serv
 	}
 
 	return ""
+}
+
+// convertLabelsToMap converts labels from interface{} (map or array) to map[string]string
+func convertLabelsToMap(labels interface{}) map[string]string {
+	result := make(map[string]string)
+
+	if labels == nil {
+		return result
+	}
+
+	switch v := labels.(type) {
+	case map[string]interface{}:
+		// Map format: labels: {key: value}
+		for key, val := range v {
+			if str, ok := val.(string); ok {
+				result[key] = str
+			}
+		}
+	case []interface{}:
+		// Array format: labels: ["key=value", ...]
+		for _, item := range v {
+			if str, ok := item.(string); ok {
+				// Split on first '=' to handle values with '=' in them
+				parts := strings.SplitN(str, "=", 2)
+				if len(parts) == 2 {
+					result[parts[0]] = parts[1]
+				}
+			}
+		}
+	case map[interface{}]interface{}:
+		// YAML can also parse as map[interface{}]interface{}
+		for key, val := range v {
+			if keyStr, ok := key.(string); ok {
+				if valStr, ok := val.(string); ok {
+					result[keyStr] = valStr
+				}
+			}
+		}
+	}
+
+	return result
 }
 
 // parseHealthCheck converts compose healthcheck to our format
@@ -226,20 +275,3 @@ func parseHealthCheck(hc *HealthCheckConfig) *state.HealthCheck {
 	return healthCheck
 }
 
-// generateComposeID generates a unique ID for a compose project
-func generateComposeID(composePath string) string {
-	// Use the directory name as the base
-	dir := filepath.Dir(composePath)
-	name := filepath.Base(dir)
-
-	// If the compose file is not in the root of the project,
-	// include parent directories to make it unique
-	if strings.Contains(dir, "/") {
-		parts := strings.Split(dir, "/")
-		if len(parts) >= 2 {
-			name = strings.Join(parts[len(parts)-2:], "_")
-		}
-	}
-
-	return fmt.Sprintf("compose_%s", name)
-}

@@ -63,11 +63,12 @@ func (s *ContainerScanner) ScanContainers(ctx context.Context) ([]state.Target, 
 		}
 
 		// Create target for this loose container
+		containerName := getContainerName(container.Names)
 		target := state.Target{
-			ID:        fmt.Sprintf("container_%s", container.ID[:12]),
+			ID:        state.GenerateTargetID(state.TargetTypeContainer, containerName, container.ID),
 			Type:      state.TargetTypeContainer,
-			Name:      getContainerName(container.Names),
-			Path:      "", // No path for loose containers
+			Name:      containerName,
+			Path:      container.ID, // Store container ID as path for loose containers
 			Services:  []state.Service{},
 			Labels:    labels,
 			CreatedAt: time.Now(),
@@ -76,11 +77,15 @@ func (s *ContainerScanner) ScanContainers(ctx context.Context) ([]state.Target, 
 
 		// Create a service entry for the container
 		service := state.Service{
-			Name:          getContainerName(container.Names),
+			ID:            state.GenerateServiceID(target.ID, containerName),
+			TargetID:      target.ID,
+			Name:          containerName,
 			Image:         container.Image,
 			CurrentDigest: inspect.Image,
 			Labels:        labels,
 			HealthCheck:   parseContainerHealthCheck(inspect.State.Health),
+			CreatedAt:     time.Now(),
+			UpdatedAt:     time.Now(),
 		}
 
 		target.Services = append(target.Services, service)
