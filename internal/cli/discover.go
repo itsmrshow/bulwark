@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
-	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 	"github.com/yourusername/bulwark/internal/discovery"
 	"github.com/yourusername/bulwark/internal/docker"
@@ -81,19 +81,10 @@ func outputDiscoveryTable(targets []state.Target, showDisabled bool) error {
 		return nil
 	}
 
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"Type", "Target", "Service", "Image", "Enabled", "Policy", "Tier", "Probe"})
-	table.SetBorder(false)
-	table.SetAutoWrapText(false)
-	table.SetAutoFormatHeaders(true)
-	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
-	table.SetCenterSeparator("")
-	table.SetColumnSeparator("")
-	table.SetRowSeparator("")
-	table.SetHeaderLine(false)
-	table.SetTablePadding("\t")
-	table.SetNoWhiteSpace(true)
+	fmt.Printf("\nDiscovered Targets:\n\n")
+	fmt.Printf("%-10s %-20s %-20s %-30s %-8s %-10s %-10s %-10s\n",
+		"TYPE", "TARGET", "SERVICE", "IMAGE", "ENABLED", "POLICY", "TIER", "PROBE")
+	fmt.Println(strings.Repeat("-", 120))
 
 	enabledCount := 0
 	disabledCount := 0
@@ -115,8 +106,8 @@ func outputDiscoveryTable(targets []state.Target, showDisabled bool) error {
 
 			// Truncate image if too long
 			image := service.Image
-			if len(image) > 40 {
-				image = image[:37] + "..."
+			if len(image) > 30 {
+				image = image[:27] + "..."
 			}
 
 			// Get probe type
@@ -125,21 +116,27 @@ func outputDiscoveryTable(targets []state.Target, showDisabled bool) error {
 				probeType = "-"
 			}
 
-			table.Append([]string{
+			// Truncate target/service if too long
+			targetName := target.Name
+			if len(targetName) > 20 {
+				targetName = targetName[:17] + "..."
+			}
+			serviceName := service.Name
+			if len(serviceName) > 20 {
+				serviceName = serviceName[:17] + "..."
+			}
+
+			fmt.Printf("%-10s %-20s %-20s %-30s %-8s %-10s %-10s %-10s\n",
 				string(target.Type),
-				target.Name,
-				service.Name,
+				targetName,
+				serviceName,
 				image,
 				enabled,
 				string(service.Labels.Policy),
 				string(service.Labels.Tier),
-				probeType,
-			})
+				probeType)
 		}
 	}
-
-	fmt.Printf("\nDiscovered Targets:\n\n")
-	table.Render()
 
 	fmt.Printf("\nSummary:\n")
 	fmt.Printf("  Targets: %d\n", len(targets))

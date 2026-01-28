@@ -113,16 +113,7 @@ func getContainerName(names []string) string {
 }
 
 // parseContainerHealthCheck converts Docker's Health to our format
-func parseContainerHealthCheck(health *struct {
-	Status        string
-	FailingStreak int
-	Log           []struct {
-		Start    time.Time
-		End      time.Time
-		ExitCode int
-		Output   string
-	}
-}) *state.HealthCheck {
+func parseContainerHealthCheck(health *docker.Health) *state.HealthCheck {
 	// Docker's container inspect health is different from config health
 	// We can't extract the full healthcheck config from runtime state
 	// This is okay - we'll read it from the image or container config if needed
