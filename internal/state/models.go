@@ -15,14 +15,14 @@ const (
 
 // Target represents a managed Docker resource
 type Target struct {
-	ID        string      `json:"id"`
-	Type      TargetType  `json:"type"`
-	Name      string      `json:"name"`
-	Path      string      `json:"path"` // For compose: path to docker-compose.yml
-	Services  []Service   `json:"services"`
-	Labels    Labels      `json:"labels"`
-	CreatedAt time.Time   `json:"created_at"`
-	UpdatedAt time.Time   `json:"updated_at"`
+	ID        string     `json:"id"`
+	Type      TargetType `json:"type"`
+	Name      string     `json:"name"`
+	Path      string     `json:"path"` // For compose: path to docker-compose.yml
+	Services  []Service  `json:"services"`
+	Labels    Labels     `json:"labels"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }
 
 // Service represents a single service/container
@@ -70,7 +70,7 @@ type Labels struct {
 	Policy     Policy      `json:"policy"`
 	Tier       Tier        `json:"tier"`
 	Probe      ProbeConfig `json:"probe"`
-	Definition string      `json:"definition"` // For loose containers: "compose:/path/to/compose.yml:service-name"
+	Definition string      `json:"definition"` // For loose containers: "compose:/abs/path/compose.yml#service=service-name"
 }
 
 // ProbeType represents the type of health probe
@@ -78,7 +78,7 @@ type ProbeType string
 
 const (
 	ProbeTypeNone      ProbeType = "none"
-	ProbeTypeDocker    ProbeType = "docker"    // Use Docker HEALTHCHECK
+	ProbeTypeDocker    ProbeType = "docker" // Use Docker HEALTHCHECK
 	ProbeTypeHTTP      ProbeType = "http"
 	ProbeTypeTCP       ProbeType = "tcp"
 	ProbeTypeLog       ProbeType = "log"
@@ -87,24 +87,24 @@ const (
 
 // ProbeConfig defines health check configuration
 type ProbeConfig struct {
-	Type         ProbeType     `json:"type"`
-	HTTPUrl      string        `json:"http_url,omitempty"`
-	HTTPStatus   int           `json:"http_status,omitempty"`   // Expected status code (default 200)
-	TCPHost      string        `json:"tcp_host,omitempty"`
-	TCPPort      int           `json:"tcp_port,omitempty"`
-	LogPattern   string        `json:"log_pattern,omitempty"`   // Regex pattern
-	WindowSec    int           `json:"window_sec,omitempty"`    // For log probe: time window
-	StabilitySec int           `json:"stability_sec,omitempty"` // Seconds to wait before declaring success
+	Type         ProbeType `json:"type"`
+	HTTPUrl      string    `json:"http_url,omitempty"`
+	HTTPStatus   int       `json:"http_status,omitempty"` // Expected status code (default 200)
+	TCPHost      string    `json:"tcp_host,omitempty"`
+	TCPPort      int       `json:"tcp_port,omitempty"`
+	LogPattern   string    `json:"log_pattern,omitempty"`   // Regex pattern
+	WindowSec    int       `json:"window_sec,omitempty"`    // For log probe: time window
+	StabilitySec int       `json:"stability_sec,omitempty"` // Seconds to wait before declaring success
 }
 
 // UpdateCheck represents an available update
 type UpdateCheck struct {
-	Target       *Target `json:"target"`
+	Target       *Target  `json:"target"`
 	Service      *Service `json:"service"`
-	RemoteDigest string  `json:"remote_digest"`
-	UpdateNeeded bool    `json:"update_needed"`
-	PolicyAllows bool    `json:"policy_allows"`
-	Reason       string  `json:"reason"` // Why update is/isn't allowed
+	RemoteDigest string   `json:"remote_digest"`
+	UpdateNeeded bool     `json:"update_needed"`
+	PolicyAllows bool     `json:"policy_allows"`
+	Reason       string   `json:"reason"` // Why update is/isn't allowed
 }
 
 // UpdateResult represents the outcome of an update
