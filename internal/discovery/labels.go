@@ -187,7 +187,7 @@ func IsKnownDatabase(imageName string) bool {
 }
 
 // ParseDefinition parses the bulwark.definition label
-// Format: "compose:/path/to/docker-compose.yml:service-name"
+// Format: "compose:/abs/path/to/compose.yml#service=service-name"
 func ParseDefinition(definition string) (path string, service string, err error) {
 	if definition == "" {
 		return "", "", fmt.Errorf("definition is empty")
@@ -200,20 +200,25 @@ func ParseDefinition(definition string) (path string, service string, err error)
 	// Remove "compose:" prefix
 	definition = strings.TrimPrefix(definition, "compose:")
 
-	// Split by the last colon to separate path and service
-	parts := strings.Split(definition, ":")
-	if len(parts) < 2 {
-		return "", "", fmt.Errorf("invalid definition format: missing service name")
+	// Split by fragment separator
+	parts := strings.SplitN(definition, "#", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid definition format: missing #service fragment")
 	}
 
-	// The service name is the last part
-	service = parts[len(parts)-1]
+	path = parts[0]
+	fragment := parts[1]
+	if path == "" {
+		return "", "", fmt.Errorf("invalid definition format: empty path")
+	}
 
-	// The path is everything before the last colon
-	path = strings.Join(parts[:len(parts)-1], ":")
+	if !strings.HasPrefix(fragment, "service=") {
+		return "", "", fmt.Errorf("invalid definition format: fragment must start with service=")
+	}
 
-	if path == "" || service == "" {
-		return "", "", fmt.Errorf("invalid definition format: empty path or service")
+	service = strings.TrimPrefix(fragment, "service=")
+	if service == "" {
+		return "", "", fmt.Errorf("invalid definition format: empty service name")
 	}
 
 	return path, service, nil
