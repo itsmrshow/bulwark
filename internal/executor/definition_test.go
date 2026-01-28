@@ -11,7 +11,7 @@ func TestParseDefinitionValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmp.Name())
+	defer func() { _ = os.Remove(tmp.Name()) }()
 
 	def := fmt.Sprintf("compose:%s#service=web", tmp.Name())
 	parsed, err := ParseDefinition(def)
@@ -32,7 +32,7 @@ func TestParseDefinitionInvalid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmp.Name())
+	defer func() { _ = os.Remove(tmp.Name()) }()
 
 	abs := tmp.Name()
 	tests := []struct {

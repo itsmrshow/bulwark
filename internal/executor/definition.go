@@ -21,7 +21,7 @@ func ParseDefinition(definition string) (Definition, error) {
 	}
 
 	if !strings.HasPrefix(definition, "compose:") {
-		return Definition{}, fmt.Errorf("definition must start with compose:")
+		return Definition{}, fmt.Errorf("definition must start with compose: prefix")
 	}
 
 	raw := strings.TrimPrefix(definition, "compose:")

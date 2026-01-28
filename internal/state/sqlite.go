@@ -240,7 +240,7 @@ func (s *SQLiteStore) ListTargets(ctx context.Context) ([]Target, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to list targets: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var targets []Target
 	for rows.Next() {
@@ -372,7 +372,7 @@ func (s *SQLiteStore) GetServicesByTarget(ctx context.Context, targetID string) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var services []Service
 	for rows.Next() {
@@ -535,7 +535,7 @@ func (s *SQLiteStore) queryUpdateHistory(ctx context.Context, query string, args
 	if err != nil {
 		return nil, fmt.Errorf("failed to query update history: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []UpdateResult
 	for rows.Next() {

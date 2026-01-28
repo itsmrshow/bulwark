@@ -115,7 +115,7 @@ func (c *Client) Ping(ctx context.Context) error {
 
 // ListContainers lists all containers
 func (c *Client) ListContainers(ctx context.Context, all bool) ([]Container, error) {
-	options := types.ContainerListOptions{
+	options := container.ListOptions{
 		All: all,
 	}
 
@@ -192,7 +192,7 @@ func (c *Client) ImagePull(ctx context.Context, ref string) error {
 	if err != nil {
 		return fmt.Errorf("failed to pull image %s: %w", ref, err)
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	// Read the output to ensure the pull completes
 	_, err = io.Copy(io.Discard, out)
@@ -242,7 +242,7 @@ func (c *Client) ContainerRestart(ctx context.Context, containerID string) error
 
 // ContainerLogs gets container logs
 func (c *Client) ContainerLogs(ctx context.Context, containerID string, tail string) (io.ReadCloser, error) {
-	options := types.ContainerLogsOptions{
+	options := container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Tail:       tail,

@@ -70,7 +70,7 @@ func runApply(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create Docker client: %w", err)
 	}
-	defer dockerClient.Close()
+	defer func() { _ = dockerClient.Close() }()
 
 	// Create state store if path provided
 	var store state.Store
@@ -79,7 +79,7 @@ func runApply(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to create state store: %w", err)
 		}
-		defer sqliteStore.Close()
+		defer func() { _ = sqliteStore.Close() }()
 
 		ctx := context.Background()
 		if err := sqliteStore.Initialize(ctx); err != nil {

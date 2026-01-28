@@ -33,11 +33,11 @@ func NewClient(logger *logging.Logger) *Client {
 
 // ManifestResponse represents a Docker registry manifest
 type ManifestResponse struct {
-	SchemaVersion int                    `json:"schemaVersion"`
-	MediaType     string                 `json:"mediaType"`
-	Config        ManifestConfig         `json:"config"`
-	Layers        []ManifestLayer        `json:"layers"`
-	Manifests     []ManifestEntry        `json:"manifests,omitempty"` // For manifest lists
+	SchemaVersion int             `json:"schemaVersion"`
+	MediaType     string          `json:"mediaType"`
+	Config        ManifestConfig  `json:"config"`
+	Layers        []ManifestLayer `json:"layers"`
+	Manifests     []ManifestEntry `json:"manifests,omitempty"` // For manifest lists
 }
 
 // ManifestConfig represents the config in a manifest
@@ -56,10 +56,10 @@ type ManifestLayer struct {
 
 // ManifestEntry represents an entry in a manifest list
 type ManifestEntry struct {
-	MediaType string            `json:"mediaType"`
-	Size      int64             `json:"size"`
-	Digest    string            `json:"digest"`
-	Platform  ManifestPlatform  `json:"platform"`
+	MediaType string           `json:"mediaType"`
+	Size      int64            `json:"size"`
+	Digest    string           `json:"digest"`
+	Platform  ManifestPlatform `json:"platform"`
 }
 
 // ManifestPlatform represents platform information
@@ -156,7 +156,7 @@ func (c *Client) fetchManifest(ctx context.Context, ref *ImageReference, token s
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to fetch manifest: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -216,7 +216,7 @@ func (c *Client) getDockerHubToken(ctx context.Context, ref *ImageReference) (st
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch token: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
