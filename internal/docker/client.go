@@ -6,11 +6,11 @@ import (
 	"io"
 	"time"
 
-	"github.com/moby/moby/api/types"
-	containertypes "github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/filters"
-	imagetypes "github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/client"
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/client"
 )
 
 // Container represents a Docker container
@@ -230,19 +230,13 @@ func (c *Client) ImageInspect(ctx context.Context, imageID string) (ImageInspect
 
 // ContainerRestart restarts a container
 func (c *Client) ContainerRestart(ctx context.Context, containerID string) error {
-	timeout := 10 // seconds
-	options := containertypes.StopOptions{
+	timeout := int(10) // seconds
+	options := container.StopOptions{
 		Timeout: &timeout,
 	}
-
-	if err := c.cli.ContainerStop(ctx, containerID, options); err != nil {
-		return fmt.Errorf("failed to stop container %s: %w", containerID, err)
+	if err := c.cli.ContainerRestart(ctx, containerID, options); err != nil {
+		return fmt.Errorf("failed to restart container %s: %w", containerID, err)
 	}
-
-	if err := c.cli.ContainerStart(ctx, containerID, types.ContainerStartOptions{}); err != nil {
-		return fmt.Errorf("failed to start container %s: %w", containerID, err)
-	}
-
 	return nil
 }
 
@@ -263,7 +257,7 @@ func (c *Client) ContainerLogs(ctx context.Context, containerID string, tail str
 }
 
 // ListImages lists Docker images
-func (c *Client) ListImages(ctx context.Context) ([]imagetypes.Summary, error) {
+func (c *Client) ListImages(ctx context.Context) ([]image.Summary, error) {
 	images, err := c.cli.ImageList(ctx, types.ImageListOptions{
 		All: false,
 	})
