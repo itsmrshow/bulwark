@@ -1,0 +1,163 @@
+package discovery
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/yourusername/bulwark/internal/docker"
+	"github.com/yourusername/bulwark/internal/logging"
+	"github.com/yourusername/bulwark/internal/state"
+)
+
+// Discoverer discovers managed targets (compose projects and containers)
+type Discoverer struct {
+	logger           *logging.Logger
+	dockerClient     *docker.Client
+	composeScanner   *ComposeScanner
+	containerScanner *ContainerScanner
+}
+
+// NewDiscoverer creates a new discoverer
+func NewDiscoverer(logger *logging.Logger, dockerClient *docker.Client) *Discoverer {
+	return &Discoverer{
+		logger:           logger.WithComponent("discoverer"),
+		dockerClient:     dockerClient,
+		composeScanner:   NewComposeScanner(logger, dockerClient),
+		containerScanner: NewContainerScanner(logger, dockerClient),
+	}
+}
+
+// Discover discovers all managed targets in the given base path
+func (d *Discoverer) Discover(ctx context.Context, basePath string) ([]state.Target, error) {
+	d.logger.Info().
+		Str("base_path", basePath).
+		Msg("Starting discovery")
+
+	// Verify Docker connection
+	if err := d.dockerClient.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	var allTargets []state.Target
+
+	// Scan compose projects
+	composeTargets, err := d.composeScanner.ScanProjects(ctx, basePath)
+	if err != nil {
+		d.logger.Warn().Err(err).Msg("Failed to scan compose projects")
+	} else {
+		allTargets = append(allTargets, composeTargets...)
+		d.logger.Info().
+			Int("count", len(composeTargets)).
+			Msg("Found compose targets")
+	}
+
+	// Scan loose containers
+	containerTargets, err := d.containerScanner.ScanContainers(ctx)
+	if err != nil {
+		d.logger.Warn().Err(err).Msg("Failed to scan containers")
+	} else {
+		allTargets = append(allTargets, containerTargets...)
+		d.logger.Info().
+			Int("count", len(containerTargets)).
+			Msg("Found container targets")
+	}
+
+	// Deduplicate targets
+	allTargets = d.deduplicateTargets(allTargets)
+
+	d.logger.Info().
+		Int("total", len(allTargets)).
+		Msg("Discovery complete")
+
+	return allTargets, nil
+}
+
+// deduplicateTargets removes duplicate targets based on ID
+func (d *Discoverer) deduplicateTargets(targets []state.Target) []state.Target {
+	seen := make(map[string]bool)
+	var unique []state.Target
+
+	for _, target := range targets {
+		if !seen[target.ID] {
+			seen[target.ID] = true
+			unique = append(unique, target)
+		}
+	}
+
+	return unique
+}
+
+// DiscoverTarget discovers a specific target by name or ID
+func (d *Discoverer) DiscoverTarget(ctx context.Context, basePath, targetID string) (*state.Target, error) {
+	targets, err := d.Discover(ctx, basePath)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, target := range targets {
+		if target.ID == targetID || target.Name == targetID {
+			return &target, nil
+		}
+	}
+
+	return nil, fmt.Errorf("target not found: %s", targetID)
+}
+
+// CountServicesByPolicy returns statistics on services by policy
+func CountServicesByPolicy(targets []state.Target) map[state.Policy]int {
+	counts := make(map[state.Policy]int)
+
+	for _, target := range targets {
+		for _, service := range target.Services {
+			if service.Labels.Enabled {
+				counts[service.Labels.Policy]++
+			}
+		}
+	}
+
+	return counts
+}
+
+// CountServicesByTier returns statistics on services by tier
+func CountServicesByTier(targets []state.Target) map[state.Tier]int {
+	counts := make(map[state.Tier]int)
+
+	for _, target := range targets {
+		for _, service := range target.Services {
+			if service.Labels.Enabled {
+				counts[service.Labels.Tier]++
+			}
+		}
+	}
+
+	return counts
+}
+
+// GetEnabledServices returns all enabled services across all targets
+func GetEnabledServices(targets []state.Target) []struct {
+	Target  *state.Target
+	Service *state.Service
+} {
+	var enabled []struct {
+		Target  *state.Target
+		Service *state.Service
+	}
+
+	for i := range targets {
+		target := &targets[i]
+		for j := range target.Services {
+			service := &target.Services[j]
+			if service.Labels.Enabled {
+				enabled = append(enabled, struct {
+					Target  *state.Target
+					Service *state.Service
+				}{
+					Target:  target,
+					Service: service,
+				})
+			}
+		}
+	}
+
+	return enabled
+}
