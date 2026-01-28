@@ -15,6 +15,7 @@ type Discoverer struct {
 	dockerClient     *docker.Client
 	composeScanner   *ComposeScanner
 	containerScanner *ContainerScanner
+	store            state.Store // Optional state persistence
 }
 
 // NewDiscoverer creates a new discoverer
@@ -24,7 +25,14 @@ func NewDiscoverer(logger *logging.Logger, dockerClient *docker.Client) *Discove
 		dockerClient:     dockerClient,
 		composeScanner:   NewComposeScanner(logger, dockerClient),
 		containerScanner: NewContainerScanner(logger, dockerClient),
+		store:            nil, // State persistence is optional
 	}
+}
+
+// WithStore sets the state store for persistence
+func (d *Discoverer) WithStore(store state.Store) *Discoverer {
+	d.store = store
+	return d
 }
 
 // Discover discovers all managed targets in the given base path
@@ -64,6 +72,13 @@ func (d *Discoverer) Discover(ctx context.Context, basePath string) ([]state.Tar
 
 	// Deduplicate targets
 	allTargets = d.deduplicateTargets(allTargets)
+
+	// Persist to store if configured
+	if d.store != nil {
+		if err := d.persistTargets(ctx, allTargets); err != nil {
+			d.logger.Warn().Err(err).Msg("Failed to persist targets to store")
+		}
+	}
 
 	d.logger.Info().
 		Int("total", len(allTargets)).
@@ -160,4 +175,37 @@ func GetEnabledServices(targets []state.Target) []struct {
 	}
 
 	return enabled
+}
+
+// persistTargets saves discovered targets to the state store
+func (d *Discoverer) persistTargets(ctx context.Context, targets []state.Target) error {
+	for i := range targets {
+		target := &targets[i]
+
+		// Save target
+		if err := d.store.SaveTarget(ctx, target); err != nil {
+			d.logger.Warn().
+				Err(err).
+				Str("target_id", target.ID).
+				Msg("Failed to save target")
+			continue
+		}
+
+		// Save services
+		for j := range target.Services {
+			service := &target.Services[j]
+			if err := d.store.SaveService(ctx, service); err != nil {
+				d.logger.Warn().
+					Err(err).
+					Str("service_id", service.ID).
+					Msg("Failed to save service")
+			}
+		}
+	}
+
+	d.logger.Debug().
+		Int("count", len(targets)).
+		Msg("Persisted targets to store")
+
+	return nil
 }

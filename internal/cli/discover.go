@@ -25,6 +25,7 @@ and all containers with bulwark.enabled=true labels.`,
 	}
 
 	cmd.Flags().String("root", "/docker_data", "Root directory to scan for compose projects")
+	cmd.Flags().String("state", "", "Path to state database (SQLite) for persistence")
 	cmd.Flags().Bool("json", false, "Output as JSON")
 	cmd.Flags().Bool("show-disabled", false, "Show services with bulwark.enabled=false")
 
@@ -33,6 +34,7 @@ and all containers with bulwark.enabled=true labels.`,
 
 func runDiscover(cmd *cobra.Command, args []string) error {
 	root, _ := cmd.Flags().GetString("root")
+	stateFile, _ := cmd.Flags().GetString("state")
 	jsonOutput, _ := cmd.Flags().GetBool("json")
 	showDisabled, _ := cmd.Flags().GetBool("show-disabled")
 
@@ -46,8 +48,29 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	}
 	defer dockerClient.Close()
 
+	// Create state store if path provided
+	var store state.Store
+	if stateFile != "" {
+		sqliteStore, err := state.NewSQLiteStore(stateFile, logger)
+		if err != nil {
+			return fmt.Errorf("failed to create state store: %w", err)
+		}
+		defer sqliteStore.Close()
+
+		ctx := context.Background()
+		if err := sqliteStore.Initialize(ctx); err != nil {
+			return fmt.Errorf("failed to initialize state store: %w", err)
+		}
+
+		store = sqliteStore
+		logger.Info().Str("path", stateFile).Msg("State persistence enabled")
+	}
+
 	// Create discoverer
 	discoverer := discovery.NewDiscoverer(logger, dockerClient)
+	if store != nil {
+		discoverer = discoverer.WithStore(store)
+	}
 
 	// Run discovery
 	ctx := context.Background()
