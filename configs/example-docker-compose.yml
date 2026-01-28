@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  # Example 1: Stateless service with HTTP probe (safe policy)
+  nginx:
+    image: nginx:latest
+    labels:
+      - bulwark.enabled=true
+      - bulwark.policy=safe
+      - bulwark.tier=stateless
+      - bulwark.probe.type=http
+      - bulwark.probe.url=http://localhost:80
+      - bulwark.probe.expect_status=200
+    ports:
+      - "8080:80"
+
+  # Example 2: Stateful database (notify-only, never auto-updates)
+  postgres:
+    image: postgres:15
+    labels:
+      - bulwark.enabled=true
+      - bulwark.policy=notify
+      - bulwark.tier=stateful
+    environment:
+      POSTGRES_PASSWORD: example
+      POSTGRES_DB: testdb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Example 3: Redis with TCP probe
+  redis:
+    image: redis:7
+    labels:
+      - bulwark.enabled=true
+      - bulwark.policy=safe
+      - bulwark.tier=stateless
+      - bulwark.probe.type=tcp
+      - bulwark.probe.tcp_host=localhost
+      - bulwark.probe.tcp_port=6379
+    ports:
+      - "6379:6379"
+
+  # Example 4: Aggressive policy with stability window
+  webapp:
+    image: traefik:latest
+    labels:
+      - bulwark.enabled=true
+      - bulwark.policy=aggressive
+      - bulwark.tier=stateless
+      - bulwark.probe.type=stability
+      - bulwark.probe.stability_sec=30
+    ports:
+      - "8081:80"
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+
+  # Example 5: Service with Docker HEALTHCHECK (automatically detected)
+  healthcheck-demo:
+    image: nginx:alpine
+    labels:
+      - bulwark.enabled=true
+      - bulwark.policy=safe
+      - bulwark.tier=stateless
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    ports:
+      - "8082:80"
+
+  # Example 6: Disabled service (won't be managed)
+  disabled-service:
+    image: busybox:latest
+    labels:
+      - bulwark.enabled=false
+    command: sleep infinity
+
+volumes:
+  postgres_data:
