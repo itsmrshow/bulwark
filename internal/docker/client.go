@@ -4,12 +4,88 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/moby/moby/api/types"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/image"
+	containertypes "github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/filters"
+	imagetypes "github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 )
+
+// Container represents a Docker container
+type Container struct {
+	ID      string
+	Names   []string
+	Image   string
+	ImageID string
+	Labels  map[string]string
+	State   string
+	Status  string
+	Created int64
+}
+
+// ContainerJSON represents detailed container information
+type ContainerJSON struct {
+	ID              string
+	Name            string
+	Image           string
+	State           ContainerState
+	Config          *ContainerConfig
+	NetworkSettings *NetworkSettings
+}
+
+// ContainerState represents container state
+type ContainerState struct {
+	Status     string
+	Running    bool
+	Paused     bool
+	Restarting bool
+	Health     *Health
+}
+
+// Health represents container health status
+type Health struct {
+	Status        string
+	FailingStreak int
+}
+
+// ContainerConfig represents container configuration
+type ContainerConfig struct {
+	Image       string
+	Labels      map[string]string
+	Healthcheck *Healthcheck
+}
+
+// Healthcheck represents healthcheck configuration
+type Healthcheck struct {
+	Test        []string
+	Interval    time.Duration
+	Timeout     time.Duration
+	Retries     int
+	StartPeriod time.Duration
+}
+
+// NetworkSettings represents network configuration
+type NetworkSettings struct {
+	IPAddress string
+	Ports     map[string][]PortBinding
+}
+
+// PortBinding represents port binding
+type PortBinding struct {
+	HostIP   string
+	HostPort string
+}
+
+// ImageInspect represents image information
+type ImageInspect struct {
+	ID          string
+	RepoTags    []string
+	RepoDigests []string
+	Created     string
+	Size        int64
+}
 
 // Client wraps the Docker API client
 type Client struct {
@@ -38,28 +114,81 @@ func (c *Client) Ping(ctx context.Context) error {
 }
 
 // ListContainers lists all containers
-func (c *Client) ListContainers(ctx context.Context, all bool) ([]types.Container, error) {
-	containers, err := c.cli.ContainerList(ctx, container.ListOptions{
+func (c *Client) ListContainers(ctx context.Context, all bool) ([]Container, error) {
+	options := types.ContainerListOptions{
 		All: all,
-	})
+	}
+
+	containers, err := c.cli.ContainerList(ctx, options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
-	return containers, nil
+
+	result := make([]Container, len(containers))
+	for i, cont := range containers {
+		result[i] = Container{
+			ID:      cont.ID,
+			Names:   cont.Names,
+			Image:   cont.Image,
+			ImageID: cont.ImageID,
+			Labels:  cont.Labels,
+			State:   cont.State,
+			Status:  cont.Status,
+			Created: cont.Created,
+		}
+	}
+
+	return result, nil
 }
 
 // InspectContainer gets detailed container information
-func (c *Client) InspectContainer(ctx context.Context, containerID string) (types.ContainerJSON, error) {
+func (c *Client) InspectContainer(ctx context.Context, containerID string) (ContainerJSON, error) {
 	inspect, err := c.cli.ContainerInspect(ctx, containerID)
 	if err != nil {
-		return types.ContainerJSON{}, fmt.Errorf("failed to inspect container %s: %w", containerID, err)
+		return ContainerJSON{}, fmt.Errorf("failed to inspect container %s: %w", containerID, err)
 	}
-	return inspect, nil
+
+	result := ContainerJSON{
+		ID:    inspect.ID,
+		Name:  inspect.Name,
+		Image: inspect.Image,
+		State: ContainerState{
+			Status:     inspect.State.Status,
+			Running:    inspect.State.Running,
+			Paused:     inspect.State.Paused,
+			Restarting: inspect.State.Restarting,
+		},
+	}
+
+	if inspect.State.Health != nil {
+		result.State.Health = &Health{
+			Status:        inspect.State.Health.Status,
+			FailingStreak: inspect.State.Health.FailingStreak,
+		}
+	}
+
+	if inspect.Config != nil {
+		result.Config = &ContainerConfig{
+			Image:  inspect.Config.Image,
+			Labels: inspect.Config.Labels,
+		}
+		if inspect.Config.Healthcheck != nil {
+			result.Config.Healthcheck = &Healthcheck{
+				Test:        inspect.Config.Healthcheck.Test,
+				Interval:    inspect.Config.Healthcheck.Interval,
+				Timeout:     inspect.Config.Healthcheck.Timeout,
+				Retries:     inspect.Config.Healthcheck.Retries,
+				StartPeriod: inspect.Config.Healthcheck.StartPeriod,
+			}
+		}
+	}
+
+	return result, nil
 }
 
 // ImagePull pulls an image from a registry
 func (c *Client) ImagePull(ctx context.Context, ref string) error {
-	out, err := c.cli.ImagePull(ctx, ref, image.PullOptions{})
+	out, err := c.cli.ImagePull(ctx, ref, types.ImagePullOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to pull image %s: %w", ref, err)
 	}
@@ -84,31 +213,42 @@ func (c *Client) ImageTag(ctx context.Context, source, target string) error {
 }
 
 // ImageInspect gets detailed image information
-func (c *Client) ImageInspect(ctx context.Context, imageID string) (types.ImageInspect, error) {
+func (c *Client) ImageInspect(ctx context.Context, imageID string) (ImageInspect, error) {
 	inspect, _, err := c.cli.ImageInspectWithRaw(ctx, imageID)
 	if err != nil {
-		return types.ImageInspect{}, fmt.Errorf("failed to inspect image %s: %w", imageID, err)
+		return ImageInspect{}, fmt.Errorf("failed to inspect image %s: %w", imageID, err)
 	}
-	return inspect, nil
+
+	return ImageInspect{
+		ID:          inspect.ID,
+		RepoTags:    inspect.RepoTags,
+		RepoDigests: inspect.RepoDigests,
+		Created:     inspect.Created,
+		Size:        inspect.Size,
+	}, nil
 }
 
 // ContainerRestart restarts a container
 func (c *Client) ContainerRestart(ctx context.Context, containerID string) error {
 	timeout := 10 // seconds
-	options := container.StopOptions{
+	options := containertypes.StopOptions{
 		Timeout: &timeout,
 	}
 
-	err := c.cli.ContainerRestart(ctx, containerID, options)
-	if err != nil {
-		return fmt.Errorf("failed to restart container %s: %w", containerID, err)
+	if err := c.cli.ContainerStop(ctx, containerID, options); err != nil {
+		return fmt.Errorf("failed to stop container %s: %w", containerID, err)
 	}
+
+	if err := c.cli.ContainerStart(ctx, containerID, types.ContainerStartOptions{}); err != nil {
+		return fmt.Errorf("failed to start container %s: %w", containerID, err)
+	}
+
 	return nil
 }
 
 // ContainerLogs gets container logs
 func (c *Client) ContainerLogs(ctx context.Context, containerID string, tail string) (io.ReadCloser, error) {
-	options := container.LogsOptions{
+	options := types.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Tail:       tail,
@@ -122,18 +262,34 @@ func (c *Client) ContainerLogs(ctx context.Context, containerID string, tail str
 	return logs, nil
 }
 
-// ContainerStats gets container stats (for health checking)
-func (c *Client) ContainerStats(ctx context.Context, containerID string) (types.Stats, error) {
-	stats, err := c.cli.ContainerStats(ctx, containerID, false)
+// ListImages lists Docker images
+func (c *Client) ListImages(ctx context.Context) ([]imagetypes.Summary, error) {
+	images, err := c.cli.ImageList(ctx, types.ImageListOptions{
+		All: false,
+	})
 	if err != nil {
-		return types.Stats{}, fmt.Errorf("failed to get stats for container %s: %w", containerID, err)
+		return nil, fmt.Errorf("failed to list images: %w", err)
 	}
-	defer stats.Body.Close()
+	return images, nil
+}
 
-	var result types.Stats
-	// Read the stats (first response is the latest)
-	decoder := io.NopCloser(stats.Body)
-	defer decoder.Close()
+// RemoveImage removes an image
+func (c *Client) RemoveImage(ctx context.Context, imageID string, force bool) error {
+	options := types.ImageRemoveOptions{
+		Force: force,
+	}
+	_, err := c.cli.ImageRemove(ctx, imageID, options)
+	if err != nil {
+		return fmt.Errorf("failed to remove image %s: %w", imageID, err)
+	}
+	return nil
+}
 
-	return result, nil
+// PruneImages prunes unused images
+func (c *Client) PruneImages(ctx context.Context) error {
+	_, err := c.cli.ImagesPrune(ctx, filters.Args{})
+	if err != nil {
+		return fmt.Errorf("failed to prune images: %w", err)
+	}
+	return nil
 }
