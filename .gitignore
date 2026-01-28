@@ -32,10 +32,13 @@ build/
 .DS_Store
 Thumbs.db
 
-# State files
+# State files (runtime data, not source code)
 *.db
 *.db-journal
-state/
+*.db-shm
+*.db-wal
+/state/
+data/state/
 
 # Config
 config.yaml
