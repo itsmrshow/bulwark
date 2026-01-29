@@ -143,7 +143,12 @@ func FindComposeFiles(root string) ([]string, error) {
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			// Skip permission errors and other access issues, continue walking
+			if os.IsPermission(err) || os.IsNotExist(err) {
+				return filepath.SkipDir
+			}
+			// For other errors, skip this path but continue
+			return nil
 		}
 
 		if info.IsDir() {
@@ -161,8 +166,10 @@ func FindComposeFiles(root string) ([]string, error) {
 		return nil
 	})
 
+	// Note: err can still be non-nil for fatal errors, but we've handled
+	// permission errors gracefully above
 	if err != nil {
-		return nil, fmt.Errorf("failed to walk directory %s: %w", root, err)
+		return composeFiles, fmt.Errorf("walk completed with errors: %w", err)
 	}
 
 	return composeFiles, nil

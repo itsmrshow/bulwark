@@ -5,7 +5,7 @@ services:
   nginx:
     image: nginx:latest
     labels:
-      - bulwark.enabled=true
+      - bulwark.enabled=false
       - bulwark.policy=safe
       - bulwark.tier=stateless
       - bulwark.probe.type=http
@@ -18,7 +18,7 @@ services:
   postgres:
     image: postgres:15
     labels:
-      - bulwark.enabled=true
+      - bulwark.enabled=false
       - bulwark.policy=notify
       - bulwark.tier=stateful
     environment:
@@ -31,7 +31,7 @@ services:
   redis:
     image: redis:7
     labels:
-      - bulwark.enabled=true
+      - bulwark.enabled=false
       - bulwark.policy=safe
       - bulwark.tier=stateless
       - bulwark.probe.type=tcp
@@ -44,7 +44,7 @@ services:
   webapp:
     image: traefik:latest
     labels:
-      - bulwark.enabled=true
+      - bulwark.enabled=false
       - bulwark.policy=aggressive
       - bulwark.tier=stateless
       - bulwark.probe.type=stability
@@ -59,7 +59,7 @@ services:
   healthcheck-demo:
     image: nginx:alpine
     labels:
-      - bulwark.enabled=true
+      - bulwark.enabled=false
       - bulwark.policy=safe
       - bulwark.tier=stateless
     healthcheck:
