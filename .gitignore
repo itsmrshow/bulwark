@@ -46,6 +46,8 @@ data/state/
 config.yaml
 config.yml
 !config.example.yaml
+.env
+!.env.example
 
 # Logs
 *.log

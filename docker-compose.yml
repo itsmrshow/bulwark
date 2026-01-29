@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   bulwark:
     build: .
@@ -8,15 +6,8 @@ services:
     restart: unless-stopped
     ports:
       - "8085:8080"
-    environment:
-      BULWARK_UI_ENABLED: "true"
-      BULWARK_UI_READONLY: "true"
-      BULWARK_UI_ADDR: ":8080"
-      BULWARK_ROOT: "/docker_data"
-      BULWARK_STATE_DB: "/var/lib/bulwark/state.db"
-      # Set when enabling write actions:
-      # BULWARK_UI_READONLY: "false"
-      # BULWARK_WEB_TOKEN: "your-strong-token"
+    env_file:
+      - .env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /docker_data:/docker_data:ro
