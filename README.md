@@ -241,27 +241,36 @@ make docker-build
 
 ## Roadmap
 
-### v1.0 (Current)
+### v1.0 (Complete! 🎉)
+
 - [x] Basic project structure
-- [x] Docker client integration
-- [x] CLI framework
-- [x] Web UI dashboard (read-only by default)
-- [ ] Discovery engine
-- [ ] Registry digest checking
-- [ ] Policy engine
-- [ ] Update executor
-- [ ] Health probes
-- [ ] Rollback manager
-- [ ] Webhook server
-- [ ] Scheduler
+- [x] Docker client integration (Phase 1)
+- [x] CLI framework (Phase 1)
+- [x] Discovery engine (Phase 2) - Compose + loose containers
+- [x] Registry digest checking (Phase 3) - Docker Hub
+- [x] Policy engine (Phase 3) - notify/safe/aggressive
+- [x] SQLite state persistence (Phase 5)
+- [x] Update executor (Phase 6) - Compose + container updates
+- [x] Health probes (Phase 7) - HTTP/TCP/Docker/Stability
+- [x] Automatic rollback (Phase 8) - On probe failure
+- [x] Scheduler (Phase 9) - Cron-based automation
+- [x] Web UI dashboard (Phases 1-7) - Production-ready React app
+- [x] API backend - REST API with async operations
+
+### v1.1 (Planned)
+
+- [ ] Webhook server - Docker Hub/Harbor push notifications
+- [ ] Prometheus metrics endpoint
+- [ ] Grafana dashboard templates
+- [ ] Log pattern probe (regex-based health checks)
 
 ### v2.0 (Future)
-- Multi-registry support (GitLab, GitHub, Harbor)
-- Notification system (Slack, Discord, email)
-- Prometheus metrics
+
+- Multi-registry support (GitLab, GitHub, Harbor, GHCR)
+- Notification system (Slack, Discord, email, PagerDuty)
 - Update windows (time-based restrictions)
-- Canary deployments
-- Pre/post hooks
+- Canary deployments (gradual rollouts)
+- Pre/post update hooks (custom scripts)
 
 ## License
 
