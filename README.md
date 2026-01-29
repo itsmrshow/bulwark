@@ -51,9 +51,52 @@ bulwark plan
 # Apply updates
 bulwark apply
 
-# Run as daemon with webhook + scheduler
+# Run the Web Console (API + UI)
 bulwark serve
 ```
+
+## Web Console (UI)
+
+Bulwark includes a production-ready Web Console that is **read-only by default**. Write actions (apply/rollback) must be explicitly enabled and are protected by a bearer token.
+
+### Local development
+
+```bash
+# Terminal 1: run the API/UI server
+export BULWARK_UI_ENABLED=true
+export BULWARK_UI_READONLY=true
+bulwark serve
+
+# Terminal 2: run the frontend dev server
+cd web
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173` for the Vite dev server (it proxies `/api` to `http://localhost:8080`).
+
+### Docker
+
+```bash
+docker build -t bulwark:dev .
+docker run --rm -p 8080:8080 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /docker_data:/docker_data \
+  -e BULWARK_UI_ENABLED=true \
+  -e BULWARK_UI_READONLY=true \
+  bulwark:dev
+```
+
+Visit `http://localhost:8080` to access the Web Console.
+
+### Enabling write actions
+
+```bash
+export BULWARK_UI_READONLY=false
+export BULWARK_WEB_TOKEN="your-strong-token"
+```
+
+Then add `Authorization: Bearer <token>` for write requests, or enter the token in the UI header.
 
 ## Label Configuration
 
@@ -122,14 +165,19 @@ docker run -d \
 ## Environment Variables
 
 - `BULWARK_ROOT=/docker_data` - Base path for compose discovery
-- `BULWARK_STATE_DIR=/data/state` - State database location
-- `BULWARK_MODE=schedule|webhook|both` - Operating mode
-- `BULWARK_INTERVAL=15m` - Scheduler interval
-- `BULWARK_WEBHOOK_ENABLED=true|false` - Enable webhook server
-- `BULWARK_WEBHOOK_ADDR=:8080` - Webhook listen address
-- `BULWARK_WEBHOOK_TOKEN=...` - Required bearer token for webhooks
-- `BULWARK_DRY_RUN=true|false` - Global dry-run mode
+- `BULWARK_STATE_DB=/var/lib/bulwark/state.db` - State database location (SQLite)
 - `BULWARK_LOG_LEVEL=debug|info|warn|error` - Logging verbosity
+
+### Web Console
+
+- `BULWARK_UI_ENABLED=true|false` - Enable the Web Console (default: true)
+- `BULWARK_UI_READONLY=true|false` - Read-only mode (default: true)
+- `BULWARK_WEB_TOKEN=...` - Required bearer token for write actions
+- `BULWARK_UI_ADDR=:8080` - UI/API listen address
+- `BULWARK_UI_DIST=web/dist` - Path to built UI assets
+- `BULWARK_PLAN_CACHE_TTL=15s` - Cache TTL for overview/plan calculations
+- `BULWARK_WEB_WRITE_RPS=1` - Write endpoint rate limit (requests per second)
+- `BULWARK_WEB_WRITE_BURST=3` - Write endpoint burst capacity
 
 ## Configuration File
 
@@ -165,8 +213,9 @@ logging:
 
 ⚠️ **Docker Socket Access**: Bulwark requires access to `/var/run/docker.sock`, which provides full Docker daemon control. Run Bulwark in a trusted environment only.
 
-- Webhook server is disabled by default
-- Webhook requires bearer token authentication
+- Web Console is read-only by default
+- Write actions require `BULWARK_WEB_TOKEN` and bearer auth
+- Keep the API on an internal network and use a reverse proxy (Traefik/HAProxy/Cloudflare Access) for additional auth
 - Optional IP allowlist for additional security
 - Secrets are redacted from logs automatically
 - Stateful services (databases) protected by default
@@ -196,6 +245,7 @@ make docker-build
 - [x] Basic project structure
 - [x] Docker client integration
 - [x] CLI framework
+- [x] Web UI dashboard (read-only by default)
 - [ ] Discovery engine
 - [ ] Registry digest checking
 - [ ] Policy engine
@@ -208,7 +258,6 @@ make docker-build
 ### v2.0 (Future)
 - Multi-registry support (GitLab, GitHub, Harbor)
 - Notification system (Slack, Discord, email)
-- Web UI dashboard
 - Prometheus metrics
 - Update windows (time-based restrictions)
 - Canary deployments
