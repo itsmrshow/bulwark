@@ -35,6 +35,16 @@ export function PlanPage({ readOnly }: { readOnly: boolean }) {
     });
   };
 
+  const toggleSelectAll = () => {
+    if (selected.size === updates.length) {
+      // If all selected, deselect all
+      setSelected(new Set());
+    } else {
+      // Otherwise, select all
+      setSelected(new Set(updates.map(item => item.service_id)));
+    }
+  };
+
   const apply = async (mode: "safe" | "selected") => {
     const payload: Record<string, unknown> = { mode };
     if (mode === "selected") {
@@ -106,6 +116,22 @@ export function PlanPage({ readOnly }: { readOnly: boolean }) {
           <CardTitle>Update Plan</CardTitle>
           <CardDescription>Only services with available updates are shown.</CardDescription>
         </CardHeader>
+        {updates.length > 0 && (
+          <div className="border-b border-ink-800/60 px-6 py-3">
+            <label className="flex items-center gap-2 text-sm text-ink-300 cursor-pointer">
+              <button
+                className="h-4 w-4 rounded border border-ink-700"
+                aria-label="select all"
+                onClick={toggleSelectAll}
+              >
+                {selected.size === updates.length && updates.length > 0 && (
+                  <div className="h-full w-full bg-signal-500" />
+                )}
+              </button>
+              <span>Select All ({updates.length} updates)</span>
+            </label>
+          </div>
+        )}
         <div className="divide-y divide-ink-800/60">
           {updates.length === 0 && (
             <div className="py-6 text-sm text-ink-400">No updates available right now.</div>

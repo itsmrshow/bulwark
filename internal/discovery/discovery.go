@@ -48,18 +48,9 @@ func (d *Discoverer) Discover(ctx context.Context, basePath string) ([]state.Tar
 
 	var allTargets []state.Target
 
-	// Scan compose projects
-	composeTargets, err := d.composeScanner.ScanProjects(ctx, basePath)
-	if err != nil {
-		d.logger.Warn().Err(err).Msg("Failed to scan compose projects")
-	} else {
-		allTargets = append(allTargets, composeTargets...)
-		d.logger.Info().
-			Int("count", len(composeTargets)).
-			Msg("Found compose targets")
-	}
-
-	// Scan loose containers
+	// Scan running containers for Bulwark labels
+	// This now handles BOTH compose projects and loose containers by reading
+	// labels directly from the running container (source of truth)
 	containerTargets, err := d.containerScanner.ScanContainers(ctx)
 	if err != nil {
 		d.logger.Warn().Err(err).Msg("Failed to scan containers")
@@ -67,7 +58,7 @@ func (d *Discoverer) Discover(ctx context.Context, basePath string) ([]state.Tar
 		allTargets = append(allTargets, containerTargets...)
 		d.logger.Info().
 			Int("count", len(containerTargets)).
-			Msg("Found container targets")
+			Msg("Found targets from running containers")
 	}
 
 	// Deduplicate targets

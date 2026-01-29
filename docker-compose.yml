@@ -5,14 +5,19 @@ services:
     container_name: bulwark
     restart: unless-stopped
     ports:
-      - "8085:8080"
+    - 8085:8080
     env_file:
-      - .env
+    - .env
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /docker_data:/docker_data:ro
-      - bulwark_state:/var/lib/bulwark
-
+    - /var/run/docker.sock:/var/run/docker.sock
+    - /docker_data:/docker_data:ro
+    - bulwark_state:/var/lib/bulwark
+    labels:
+    - bulwark.enabled=true
+    - bulwark.policy=safe
+    - bulwark.tier=stateless
+    - bulwark.probe.type=stability
+    - bulwark.probe.stability_sec=15
 volumes:
   bulwark_state:
     driver: local

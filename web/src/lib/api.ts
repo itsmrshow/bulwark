@@ -1,16 +1,40 @@
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
-const TOKEN_KEY = "bulwark.web.token";
 
-export function getToken() {
-  return localStorage.getItem(TOKEN_KEY) ?? "";
+export async function login(token: string) {
+  const response = await fetch(`${API_BASE}/api/login`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ token }),
+    credentials: "include" // Important: send cookies
+  });
+
+  if (!response.ok) {
+    let details = "";
+    try {
+      const data = await response.json();
+      details = data?.error ?? response.statusText;
+    } catch {
+      details = response.statusText;
+    }
+    throw new Error(details);
+  }
+
+  return await response.json();
 }
 
-export function setToken(token: string) {
-  if (!token) {
-    localStorage.removeItem(TOKEN_KEY);
-    return;
+export async function logout() {
+  const response = await fetch(`${API_BASE}/api/logout`, {
+    method: "POST",
+    credentials: "include"
+  });
+
+  if (!response.ok) {
+    throw new Error("Logout failed");
   }
-  localStorage.setItem(TOKEN_KEY, token);
+
+  return await response.json();
 }
 
 export async function apiFetch<T>(path: string, options: RequestInit = {}) {
@@ -18,14 +42,11 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}) {
   if (!headers.has("Content-Type") && options.body) {
     headers.set("Content-Type", "application/json");
   }
-  const token = getToken();
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
 
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
-    headers
+    headers,
+    credentials: "include" // Important: send session cookies
   });
 
   if (!response.ok) {
