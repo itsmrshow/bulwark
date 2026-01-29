@@ -20,6 +20,8 @@ go.work
 # Build artifacts
 dist/
 build/
+web/dist/
+web/node_modules/
 
 # IDE
 .vscode/

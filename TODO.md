@@ -1,0 +1,31 @@
+# Bulwark Web Console TODO
+
+- [x] Phase 1: Repo inspection + architecture decision
+  - [x] Inspect CLI structure, SQLite schema, state/history storage
+  - [x] Choose Option A (Go serves API + static UI from web/dist)
+- [x] Phase 2: Backend API scaffolding + health/overview/targets/history endpoints
+  - [x] Add internal/api server + config/env parsing
+  - [x] Implement health/overview/targets/history handlers
+  - [x] Wire serve command to start API + UI server
+- [x] Phase 3: Planner endpoint (structured plan)
+  - [x] Add internal/planner with structured plan output
+  - [x] Implement /api/plan + update CLI plan to use planner
+- [x] Phase 4: Runs manager + apply endpoint async execution + status endpoint
+  - [x] Add run manager (in-memory) + /api/runs/{id}
+  - [x] Implement /api/apply async execution + event streaming/polling
+  - [x] Implement /api/rollback stub (501) + document
+- [x] Phase 5: Frontend scaffolding + pages + components + API client
+  - [x] Create Vite + React + TS app with Tailwind + shadcn-style UI components
+  - [x] Add routing + layout + nav
+  - [x] Implement Overview/Targets/Plan/Apply/History pages
+- [x] Phase 6: Integration polish (read-only banner, apply confirmation, risk badges)
+  - [x] Read-only mode banner + disable write actions
+  - [x] Apply confirmation modal + risk badges
+  - [x] Plan-before-apply callouts
+- [x] Phase 7: Docker build pipeline for full stack
+  - [x] Build frontend in Dockerfile + copy dist
+  - [x] Serve UI from web/dist in Go server
+- [ ] Phase 8: Tests + README + commit(s)
+  - [x] Go unit tests: auth middleware + planner fixture
+  - [x] README updates (UI run instructions, env vars, security notes)
+  - [ ] Commit(s)

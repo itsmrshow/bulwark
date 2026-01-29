@@ -1,46 +1,87 @@
 package cli
 
 import (
-	"fmt"
+	"context"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/yourusername/bulwark/internal/api"
+	"github.com/yourusername/bulwark/internal/logging"
 )
 
 // NewServeCommand creates the serve command
 func NewServeCommand() *cobra.Command {
+	cfg := api.LoadConfig()
+
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Run as daemon with webhook server and/or scheduler",
+		Short: "Run Bulwark Web Console (API + UI)",
 		Long: `Runs Bulwark as a daemon process with:
-- Webhook server for triggering updates via HTTP
-- Scheduler for periodic update checks`,
+- Web Console (API + UI)
+- Scheduler and webhook support (planned)`,
 		RunE: runServe,
 	}
 
-	cmd.Flags().Bool("no-webhook", false, "Disable webhook server")
-	cmd.Flags().Bool("no-scheduler", false, "Disable scheduler")
-	cmd.Flags().String("addr", ":8080", "Webhook server listen address")
-	cmd.Flags().String("interval", "15m", "Scheduler interval")
+	cmd.Flags().String("addr", cfg.Addr, "Web UI/API listen address")
+	cmd.Flags().String("root", cfg.Root, "Root directory to scan for compose projects")
+	cmd.Flags().String("state", cfg.StateDB, "Path to state database (SQLite)")
+	cmd.Flags().String("ui-dist", cfg.DistDir, "Path to built UI assets")
+	cmd.Flags().Bool("ui-enabled", cfg.UIEnabled, "Enable the web UI")
+	cmd.Flags().Bool("ui-readonly", cfg.ReadOnly, "Run UI in read-only mode")
 
 	return cmd
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
-	noWebhook, _ := cmd.Flags().GetBool("no-webhook")
-	noScheduler, _ := cmd.Flags().GetBool("no-scheduler")
+	logger := logging.Default()
+	cfg := api.LoadConfig()
+
 	addr, _ := cmd.Flags().GetString("addr")
-	interval, _ := cmd.Flags().GetString("interval")
+	root, _ := cmd.Flags().GetString("root")
+	stateFile, _ := cmd.Flags().GetString("state")
+	distDir, _ := cmd.Flags().GetString("ui-dist")
+	uiEnabled, _ := cmd.Flags().GetBool("ui-enabled")
+	uiReadonly, _ := cmd.Flags().GetBool("ui-readonly")
 
-	fmt.Println("Starting Bulwark server...")
+	cfg.Addr = addr
+	cfg.Root = root
+	cfg.StateDB = stateFile
+	cfg.DistDir = distDir
+	cfg.UIEnabled = uiEnabled
+	cfg.ReadOnly = uiReadonly
 
-	if !noWebhook {
-		fmt.Printf("Webhook server will listen on %s\n", addr)
+	server, err := api.NewServer(cfg, logger)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = server.Close() }()
+
+	httpServer := &http.Server{
+		Addr:              cfg.Addr,
+		Handler:           server.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
-	if !noScheduler {
-		fmt.Printf("Scheduler will run every %s\n", interval)
-	}
+	go func() {
+		logger.Info().Str("addr", cfg.Addr).Msg("Bulwark Web Console listening")
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error().Err(err).Msg("server error")
+			os.Exit(1)
+		}
+	}()
 
-	fmt.Println("Server not implemented yet")
-	return nil
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	<-stop
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return httpServer.Shutdown(ctx)
 }
