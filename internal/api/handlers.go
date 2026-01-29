@@ -88,6 +88,110 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed", "")
+		return
+	}
+
+	if s.cfg.WebToken == "" {
+		writeError(w, http.StatusServiceUnavailable, "authentication disabled", "BULWARK_WEB_TOKEN is not configured")
+		return
+	}
+
+	var req struct {
+		Token string `json:"token"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request", err.Error())
+		return
+	}
+
+	if req.Token != s.cfg.WebToken {
+		writeError(w, http.StatusUnauthorized, "invalid token", "")
+		return
+	}
+
+	// Create session
+	sessionID := s.sessions.create()
+
+	// Set httpOnly cookie (secure in production with HTTPS)
+	http.SetCookie(w, &http.Cookie{
+		Name:     "bulwark_session",
+		Value:    sessionID,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   86400, // 24 hours
+	})
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Logged in successfully",
+	})
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed", "")
+		return
+	}
+
+	// Get and delete session
+	if cookie, err := r.Cookie("bulwark_session"); err == nil {
+		s.sessions.delete(cookie.Value)
+	}
+
+	// Clear cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "bulwark_session",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   -1,
+	})
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Logged out successfully",
+	})
+}
+
+func (s *Server) handleEnableWrites(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed", "")
+		return
+	}
+
+	if s.cfg.ReadOnly {
+		writeError(w, http.StatusForbidden, "read-only mode", "Bulwark is in global read-only mode (BULWARK_UI_READONLY=true)")
+		return
+	}
+
+	if s.cfg.WebToken == "" {
+		writeError(w, http.StatusServiceUnavailable, "authentication disabled", "BULWARK_WEB_TOKEN is not configured")
+		return
+	}
+
+	// Auto-authenticate using the backend token (no user token required)
+	sessionID := s.sessions.create()
+
+	// Set httpOnly cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "bulwark_session",
+		Value:    sessionID,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   86400, // 24 hours
+	})
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Write mode enabled",
+	})
+}
+
 func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed", "")
@@ -519,11 +623,14 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 			continue
 		}
 
+		// Track if this service is explicitly selected
+		isExplicitlySelected := false
 		if mode == "selected" && len(serviceFilter) > 0 {
 			if !serviceFilter[item.ServiceID] {
 				summary.UpdatesSkipped++
 				continue
 			}
+			isExplicitlySelected = true
 		}
 
 		if mode == "safe" && item.Risk != planner.RiskSafe {
@@ -532,7 +639,9 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 			continue
 		}
 
-		if !item.Allowed && !req.Force {
+		// Allow manual override: if user explicitly selected services, treat as forced
+		forceUpdate := req.Force || isExplicitlySelected
+		if !item.Allowed && !forceUpdate {
 			summary.UpdatesSkipped++
 			s.runs.AddEvent(runID, RunEvent{Level: "warn", Target: item.TargetName, Service: item.ServiceName, Step: "skip", Message: item.Reason})
 			continue

@@ -5,6 +5,7 @@ import {
   History,
   LayoutDashboard,
   PlayCircle,
+  Settings,
   Target
 } from "lucide-react";
 import { useHealth } from "./lib/queries";
@@ -15,13 +16,15 @@ import { TargetsPage } from "./pages/TargetsPage";
 import { PlanPage } from "./pages/PlanPage";
 import { ApplyPage } from "./pages/ApplyPage";
 import { HistoryPage } from "./pages/HistoryPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 const navItems = [
   { to: "/", label: "Overview", icon: LayoutDashboard },
   { to: "/targets", label: "Targets", icon: Target },
   { to: "/plan", label: "Updates / Plan", icon: ClipboardList },
   { to: "/apply", label: "Apply", icon: PlayCircle },
-  { to: "/history", label: "History", icon: History }
+  { to: "/history", label: "History", icon: History },
+  { to: "/settings", label: "Settings", icon: Settings }
 ];
 
 export default function App() {
@@ -107,6 +110,7 @@ export default function App() {
               <Route path="/plan" element={<PlanPage readOnly={health?.read_only ?? true} />} />
               <Route path="/apply" element={<ApplyPage />} />
               <Route path="/history" element={<HistoryPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
             </Routes>
           </div>
         </main>

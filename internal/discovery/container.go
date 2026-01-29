@@ -24,9 +24,9 @@ func NewContainerScanner(logger *logging.Logger, dockerClient *docker.Client) *C
 	}
 }
 
-// ScanContainers scans for loose containers with bulwark.enabled=true
+// ScanContainers scans ALL running containers for bulwark labels
 func (s *ContainerScanner) ScanContainers(ctx context.Context) ([]state.Target, error) {
-	s.logger.Info().Msg("Scanning for labeled containers")
+	s.logger.Info().Msg("Scanning running containers for Bulwark labels")
 
 	// List all running containers
 	containers, err := s.dockerClient.ListContainers(ctx, false)
@@ -36,14 +36,37 @@ func (s *ContainerScanner) ScanContainers(ctx context.Context) ([]state.Target, 
 
 	s.logger.Debug().Int("total", len(containers)).Msg("Found containers")
 
-	var targets []state.Target
+	// Group containers by compose project, loose containers go into individual targets
+	composeProjects := make(map[string][]docker.Container)
+	var looseContainers []docker.Container
 
 	for _, container := range containers {
-		// Skip containers managed by compose (they're handled by ComposeScanner)
-		if _, ok := container.Labels["com.docker.compose.project"]; ok {
+		// Parse labels to check if bulwark is enabled
+		labels := ParseLabels(container.Labels, container.Image)
+		if !labels.Enabled {
 			continue
 		}
 
+		// Check if part of a compose project
+		if projectName, ok := container.Labels["com.docker.compose.project"]; ok {
+			composeProjects[projectName] = append(composeProjects[projectName], container)
+		} else {
+			looseContainers = append(looseContainers, container)
+		}
+	}
+
+	var targets []state.Target
+
+	// Process compose projects
+	for projectName, projectContainers := range composeProjects {
+		target := s.createComposeTarget(ctx, projectName, projectContainers)
+		if target != nil {
+			targets = append(targets, *target)
+		}
+	}
+
+	// Process loose containers
+	for _, container := range looseContainers {
 		// Parse labels
 		labels := ParseLabels(container.Labels, container.Image)
 
@@ -100,6 +123,79 @@ func (s *ContainerScanner) ScanContainers(ctx context.Context) ([]state.Target, 
 	}
 
 	return targets, nil
+}
+
+// createComposeTarget creates a target from a group of compose containers
+func (s *ContainerScanner) createComposeTarget(ctx context.Context, projectName string, containers []docker.Container) *state.Target {
+	if len(containers) == 0 {
+		return nil
+	}
+
+	// Get the compose file path from the first container's working dir label (if available)
+	composePath := ""
+	if workingDir, ok := containers[0].Labels["com.docker.compose.project.working_dir"]; ok {
+		composePath = workingDir + "/docker-compose.yml"
+	}
+
+	// Create target
+	target := state.Target{
+		ID:        state.GenerateTargetID(state.TargetTypeCompose, projectName, composePath),
+		Type:      state.TargetTypeCompose,
+		Name:      projectName,
+		Path:      composePath,
+		Services:  []state.Service{},
+		Labels:    state.DefaultLabels(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	// Add each container as a service
+	for _, container := range containers {
+		serviceName := container.Labels["com.docker.compose.service"]
+		if serviceName == "" {
+			serviceName = getContainerName(container.Names)
+		}
+
+		// Parse labels from the running container
+		labels := ParseLabels(container.Labels, container.Image)
+
+		// Inspect container for more details
+		inspect, err := s.dockerClient.InspectContainer(ctx, container.ID)
+		if err != nil {
+			s.logger.Warn().
+				Err(err).
+				Str("container_id", container.ID).
+				Msg("Failed to inspect container")
+			continue
+		}
+
+		service := state.Service{
+			ID:            state.GenerateServiceID(target.ID, serviceName),
+			TargetID:      target.ID,
+			Name:          serviceName,
+			Image:         container.Image,
+			CurrentDigest: inspect.Image,
+			Labels:        labels,
+			HealthCheck:   parseContainerHealthCheck(inspect.State.Health),
+			CreatedAt:     time.Now(),
+			UpdatedAt:     time.Now(),
+		}
+
+		target.Services = append(target.Services, service)
+
+		s.logger.Debug().
+			Str("project", projectName).
+			Str("service", serviceName).
+			Str("image", container.Image).
+			Msg("Added compose service from container")
+	}
+
+	s.logger.Info().
+		Str("project", projectName).
+		Int("services", len(target.Services)).
+		Msg("Found compose project from running containers")
+
+	return &target
 }
 
 // getContainerName extracts a clean container name from the Names array

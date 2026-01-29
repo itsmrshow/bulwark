@@ -20,6 +20,7 @@ type Server struct {
 	runs         *RunManager
 	writeLimiter *rate.Limiter
 	planCache    *planCache
+	sessions     *sessionStore
 }
 
 // NewServer constructs a new API server.
@@ -55,6 +56,7 @@ func NewServer(cfg Config, logger *logging.Logger) (*Server, error) {
 		runs:         NewRunManager(25, 1500, 200),
 		writeLimiter: limiter,
 		planCache:    newPlanCache(cfg.PlanCacheTTL),
+		sessions:     newSessionStore(),
 	}, nil
 }
 
@@ -70,6 +72,9 @@ func (s *Server) Close() error {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", s.handleHealth)
+	mux.HandleFunc("/api/login", s.handleLogin)
+	mux.HandleFunc("/api/logout", s.handleLogout)
+	mux.HandleFunc("/api/enable-writes", s.handleEnableWrites)
 	mux.HandleFunc("/api/overview", s.handleOverview)
 	mux.HandleFunc("/api/targets", s.handleTargets)
 	mux.HandleFunc("/api/targets/", s.handleTargetByID)

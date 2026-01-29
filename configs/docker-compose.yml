@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Example 1: Stateless service with HTTP probe (safe policy)
   nginx:

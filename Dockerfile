@@ -17,7 +17,13 @@ RUN CGO_ENABLED=1 go build -o /out/bulwark ./cmd/bulwark
 
 # Runtime image
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    && curl -fsSL https://get.docker.com -o get-docker.sh \
+    && sh get-docker.sh \
+    && rm get-docker.sh \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=go-build /out/bulwark /usr/local/bin/bulwark
 COPY --from=web-build /app/web/dist /app/web/dist
