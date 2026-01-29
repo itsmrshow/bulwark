@@ -8,6 +8,7 @@ import (
 	"github.com/yourusername/bulwark/internal/docker"
 	"github.com/yourusername/bulwark/internal/logging"
 	"github.com/yourusername/bulwark/internal/policy"
+	"github.com/yourusername/bulwark/internal/probe"
 	"github.com/yourusername/bulwark/internal/state"
 )
 
@@ -17,7 +18,9 @@ type Executor struct {
 	containerExec containerUpdater
 	lockManager   lockManager
 	policyEngine  *policy.Engine
+	probeEngine   *probe.Engine
 	store         state.Store
+	dockerClient  *docker.Client
 	logger        *logging.Logger
 	dryRun        bool
 }
@@ -30,7 +33,9 @@ func NewExecutor(dockerClient *docker.Client, policyEngine *policy.Engine, store
 		containerExec: NewContainerExecutor(composeExec, logger),
 		lockManager:   NewLockManager(logger),
 		policyEngine:  policyEngine,
+		probeEngine:   probe.NewEngine(dockerClient, logger),
 		store:         store,
+		dockerClient:  dockerClient,
 		logger:        logger.WithComponent("executor"),
 		dryRun:        dryRun,
 	}
@@ -126,6 +131,56 @@ func (e *Executor) ExecuteUpdate(ctx context.Context, target *state.Target, serv
 	}
 	result.NewDigest = actualNewDigest
 
+	// Run health probes if configured (skip for dry-run and if probe type is none)
+	if service.Labels.Probe.Type != state.ProbeTypeNone {
+		e.logger.Info().
+			Str("service", service.Name).
+			Str("probe_type", string(service.Labels.Probe.Type)).
+			Msg("Running health probes")
+
+		// Find the container ID for probe execution
+		containerID, err := e.findContainerID(ctx, target, service)
+		if err != nil {
+			e.logger.Warn().Err(err).Msg("Failed to find container ID for probes, skipping")
+		} else {
+			// Execute probes
+			probeResults := e.probeEngine.ExecuteProbes(ctx, target, service, containerID)
+			result.ProbeResults = probeResults
+
+			// Check if all probes passed
+			if !probe.AllProbesPassed(probeResults) {
+				e.logger.Error().
+					Str("service", service.Name).
+					Msg("Health probes failed, initiating rollback")
+
+				// Perform rollback
+				rollbackErr := e.ExecuteRollback(ctx, target, service, result)
+				if rollbackErr != nil {
+					result.Error = fmt.Errorf("update succeeded but probes failed, rollback also failed: %w", rollbackErr)
+				} else {
+					result.Error = fmt.Errorf("update succeeded but health probes failed, rolled back to previous version")
+				}
+
+				result.Success = false
+				result.CompletedAt = time.Now()
+
+				// Save failed result
+				if e.store != nil {
+					if err := e.store.SaveUpdateResult(ctx, result); err != nil {
+						e.logger.Warn().Err(err).Msg("Failed to save update result to store")
+					}
+				}
+
+				return result
+			}
+
+			e.logger.Info().
+				Str("service", service.Name).
+				Int("probe_count", len(probeResults)).
+				Msg("All health probes passed")
+		}
+	}
+
 	// Update successful
 	result.Success = true
 	result.CompletedAt = time.Now()
@@ -192,6 +247,31 @@ func (e *Executor) ExecuteRollback(ctx context.Context, target *state.Target, se
 		Msg("Rollback completed successfully")
 
 	return nil
+}
+
+// findContainerID finds the container ID for a service
+func (e *Executor) findContainerID(ctx context.Context, target *state.Target, service *state.Service) (string, error) {
+	containers, err := e.dockerClient.ListContainers(ctx, false)
+	if err != nil {
+		return "", fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	// For compose targets, match by project and service labels
+	if target.Type == state.TargetTypeCompose {
+		for _, container := range containers {
+			if container.Labels["com.docker.compose.project"] == target.Name &&
+				container.Labels["com.docker.compose.service"] == service.Name {
+				return container.ID, nil
+			}
+		}
+	}
+
+	// For container targets, use the path (which is the container ID)
+	if target.Type == state.TargetTypeContainer {
+		return target.Path, nil
+	}
+
+	return "", fmt.Errorf("container not found for service %s", service.Name)
 }
 
 // min returns the minimum of two integers
