@@ -303,7 +303,92 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "rollback not implemented", "")
+	// Parse request
+	target := r.URL.Query().Get("target")
+	service := r.URL.Query().Get("service")
+
+	if target == "" || service == "" {
+		writeError(w, http.StatusBadRequest, "missing required parameters: target and service", "")
+		return
+	}
+
+	// Discover the target
+	ctx := r.Context()
+	targets, err := s.discoverTargets(ctx, target)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "discovery failed", err.Error())
+		return
+	}
+
+	if len(targets) == 0 {
+		writeError(w, http.StatusNotFound, "target not found", target)
+		return
+	}
+
+	discoveredTarget := &targets[0]
+
+	// Find the service
+	var discoveredService *state.Service
+	for i := range discoveredTarget.Services {
+		if discoveredTarget.Services[i].Name == service {
+			discoveredService = &discoveredTarget.Services[i]
+			break
+		}
+	}
+
+	if discoveredService == nil {
+		writeError(w, http.StatusNotFound, "service not found", service)
+		return
+	}
+
+	// Get last successful update from history
+	if s.store == nil {
+		writeError(w, http.StatusInternalServerError, "state store not configured", "")
+		return
+	}
+
+	history, err := s.store.GetUpdateHistoryByService(ctx, discoveredService.ID, 1)
+	if err != nil || len(history) == 0 {
+		writeError(w, http.StatusNotFound, "no update history found for service", service)
+		return
+	}
+
+	lastUpdate := history[0]
+
+	// Create executor and perform rollback
+	dockerClient, err := docker.NewClient()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create Docker client", err.Error())
+		return
+	}
+	defer func() { _ = dockerClient.Close() }()
+
+	policyEngine := policy.NewEngine(s.logger)
+	exec := executor.NewExecutor(dockerClient, policyEngine, s.store, s.logger, false)
+
+	// Create a fake update result to pass to rollback
+	result := &state.UpdateResult{
+		TargetID:    discoveredTarget.ID,
+		ServiceID:   discoveredService.ID,
+		ServiceName: discoveredService.Name,
+		OldDigest:   lastUpdate.OldDigest,
+		NewDigest:   discoveredService.CurrentDigest,
+	}
+
+	// Execute rollback
+	err = exec.ExecuteRollback(ctx, discoveredTarget, discoveredService, result)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "rollback failed", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":        true,
+		"target":         target,
+		"service":        service,
+		"rolled_back_to": lastUpdate.OldDigest[:12],
+		"message":        "Successfully rolled back to previous version",
+	})
 }
 
 func (s *Server) discoverTargets(ctx context.Context, target string) ([]state.Target, error) {
