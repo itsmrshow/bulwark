@@ -112,6 +112,9 @@ Notifications are only sent when updates are available.
 
 Environment overrides:
 - `DISCORD_WEBHOOK_URL` / `SLACK_WEBHOOK_URL` will preconfigure webhooks and lock them in the UI.
+- `BULWARK_NOTIFY_ON_FIND` enables immediate notifications without using the UI.
+- `BULWARK_NOTIFY_DIGEST` enables digest notifications without using the UI.
+- `BULWARK_NOTIFY_CHECK_CRON` / `BULWARK_NOTIFY_DIGEST_CRON` override the notification schedules.
 - Settings are persisted to `/data/bulwark.json` by default (configure with `BULWARK_DATA_DIR` or `BULWARK_CONFIG_PATH`).
 
 ## Label Configuration

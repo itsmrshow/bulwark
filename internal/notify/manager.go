@@ -63,6 +63,7 @@ func (m *Manager) Settings() Settings {
 // Reload applies env overrides to current config.
 func (m *Manager) Reload(ctx context.Context) {
 	m.applyEnvOverrides()
+	m.restartScheduler()
 }
 
 // EnvLocked returns environment-provided webhook settings.
@@ -98,6 +99,7 @@ func (m *Manager) Update(ctx context.Context, settings Settings) error {
 	m.config = merged
 	m.mu.Unlock()
 
+	m.applyEnvOverrides()
 	m.restartScheduler()
 	return nil
 }
@@ -156,11 +158,32 @@ func (m *Manager) restartScheduler() {
 func (m *Manager) applyEnvOverrides() {
 	discord := strings.TrimSpace(os.Getenv("DISCORD_WEBHOOK_URL"))
 	slack := strings.TrimSpace(os.Getenv("SLACK_WEBHOOK_URL"))
-	if discord == "" && slack == "" {
+	notifyOnFind, notifyOnFindSet := readEnvBool("BULWARK_NOTIFY_ON_FIND")
+	digestEnabled, digestEnabledSet := readEnvBool("BULWARK_NOTIFY_DIGEST")
+	checkCron := strings.TrimSpace(os.Getenv("BULWARK_NOTIFY_CHECK_CRON"))
+	digestCron := strings.TrimSpace(os.Getenv("BULWARK_NOTIFY_DIGEST_CRON"))
+	if discord == "" && slack == "" && !notifyOnFindSet && !digestEnabledSet && checkCron == "" && digestCron == "" {
 		return
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if notifyOnFindSet {
+		m.config.NotifyOnFind = notifyOnFind
+		m.envLock.NotifyOnFind = notifyOnFind
+	}
+	if digestEnabledSet {
+		m.config.DigestEnabled = digestEnabled
+		m.envLock.DigestEnabled = digestEnabled
+	}
+	if checkCron != "" {
+		m.config.CheckCron = checkCron
+		m.envLock.CheckCron = checkCron
+	}
+	if digestCron != "" {
+		m.config.DigestCron = digestCron
+		m.envLock.DigestCron = digestCron
+	}
 
 	if discord != "" {
 		m.config.DiscordWebhook = discord
@@ -173,6 +196,23 @@ func (m *Manager) applyEnvOverrides() {
 		m.config.SlackEnabled = true
 		m.envLock.SlackWebhook = slack
 		m.envLock.SlackEnabled = true
+	}
+
+	m.config = m.config.Normalize()
+}
+
+func readEnvBool(key string) (bool, bool) {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if value == "" {
+		return false, false
+	}
+	switch value {
+	case "1", "true", "yes", "y", "on":
+		return true, true
+	case "0", "false", "no", "n", "off":
+		return false, true
+	default:
+		return false, false
 	}
 }
 
