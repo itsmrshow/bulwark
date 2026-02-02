@@ -98,6 +98,13 @@ func (s *SQLiteStore) Initialize(ctx context.Context) error {
 		CREATE INDEX IF NOT EXISTS idx_update_history_target_id ON update_history(target_id);
 		CREATE INDEX IF NOT EXISTS idx_update_history_service_id ON update_history(service_id);
 		CREATE INDEX IF NOT EXISTS idx_update_history_completed_at ON update_history(completed_at);
+
+		-- Settings table
+		CREATE TABLE IF NOT EXISTS settings (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL,
+			updated_at DATETIME NOT NULL
+		);
 	`
 
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
@@ -601,5 +608,35 @@ func (s *SQLiteStore) PruneStaleTargets(ctx context.Context, olderThan time.Time
 	rowsAffected, _ := result.RowsAffected()
 	s.logger.Info().Int64("rows_deleted", rowsAffected).Msg("Pruned stale targets")
 
+	return nil
+}
+
+// GetSetting retrieves a setting value.
+func (s *SQLiteStore) GetSetting(ctx context.Context, key string) (string, error) {
+	query := `SELECT value FROM settings WHERE key = ?`
+	var value string
+	err := s.db.QueryRowContext(ctx, query, key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("setting not found: %s", key)
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to get setting: %w", err)
+	}
+	return value, nil
+}
+
+// SetSetting stores a setting value.
+func (s *SQLiteStore) SetSetting(ctx context.Context, key, value string) error {
+	query := `
+		INSERT INTO settings (key, value, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET
+			value = excluded.value,
+			updated_at = excluded.updated_at
+	`
+	_, err := s.db.ExecContext(ctx, query, key, value, time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to set setting: %w", err)
+	}
 	return nil
 }

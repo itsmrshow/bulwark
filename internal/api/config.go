@@ -2,6 +2,7 @@ package api
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +17,8 @@ type Config struct {
 	ReadOnly       bool
 	WebToken       string
 	DistDir        string
+	DataDir        string
+	ConfigPath     string
 	WriteRateRPS   float64
 	WriteRateBurst int
 	PlanCacheTTL   time.Duration
@@ -31,10 +34,18 @@ func LoadConfig() Config {
 		ReadOnly:       getEnvBool("BULWARK_UI_READONLY", true),
 		WebToken:       os.Getenv("BULWARK_WEB_TOKEN"),
 		DistDir:        getEnv("BULWARK_UI_DIST", "web/dist"),
+		DataDir:        getEnv("BULWARK_DATA_DIR", "/data"),
 		WriteRateRPS:   getEnvFloat("BULWARK_WEB_WRITE_RPS", 1.0),
 		WriteRateBurst: getEnvInt("BULWARK_WEB_WRITE_BURST", 3),
 		PlanCacheTTL:   getEnvDuration("BULWARK_PLAN_CACHE_TTL", 15*time.Second),
 	}
+}
+
+func (c Config) WithDefaults() Config {
+	if c.ConfigPath == "" {
+		c.ConfigPath = getEnv("BULWARK_CONFIG_PATH", filepath.Join(c.DataDir, "bulwark.json"))
+	}
+	return c
 }
 
 func getEnv(key, defaultValue string) string {

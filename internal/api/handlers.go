@@ -578,6 +578,7 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 
 	logger := s.logger.WithComponent("apply")
 	s.runs.AddEvent(runID, RunEvent{Level: "info", Step: "start", Message: "Apply run started"})
+	s.runs.AddEvent(runID, RunEvent{Level: "info", Step: "plan", Message: "Building update plan"})
 
 	dockerClient, err := docker.NewClient()
 	if err != nil {
@@ -596,14 +597,51 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 	policyEngine := policy.NewEngine(logger)
 	plannerSvc := planner.NewPlanner(logger, discoverer, registryClient, policyEngine)
 
-	plan, err := plannerSvc.BuildPlan(ctx, planner.PlanOptions{
-		Root:            s.cfg.Root,
-		TargetFilter:    req.Target,
-		IncludeDisabled: false,
+	var plan *planner.Plan
+	if req.Target == "" {
+		if cached, ok := s.planCache.Get(); ok {
+			plan = cached
+			s.runs.AddEvent(runID, RunEvent{Level: "info", Step: "plan", Message: "Using cached plan"})
+		}
+	}
+
+	if plan == nil {
+		var planErr error
+		plan, planErr = plannerSvc.BuildPlan(ctx, planner.PlanOptions{
+			Root:            s.cfg.Root,
+			TargetFilter:    req.Target,
+			IncludeDisabled: false,
+		})
+		if planErr != nil {
+			s.runs.AddEvent(runID, RunEvent{Level: "error", Step: "plan", Message: "Failed to build plan", Data: map[string]interface{}{"error": planErr.Error()}})
+			s.runs.Complete(runID, "failed")
+			return
+		}
+		if req.Target == "" {
+			s.planCache.Set(plan)
+		}
+	}
+
+	summary := RunSummary{}
+	updateSummary := func() {
+		s.runs.UpdateSummary(runID, summary)
+	}
+
+	s.runs.AddEvent(runID, RunEvent{
+		Level:   "info",
+		Step:    "plan",
+		Message: fmt.Sprintf("Plan ready: %d updates across %d services", plan.UpdateCount, plan.ServiceCount),
+		Data: map[string]interface{}{
+			"target_count":  plan.TargetCount,
+			"service_count": plan.ServiceCount,
+			"update_count":  plan.UpdateCount,
+			"allowed_count": plan.AllowedCount,
+		},
 	})
-	if err != nil {
-		s.runs.AddEvent(runID, RunEvent{Level: "error", Step: "plan", Message: "Failed to build plan", Data: map[string]interface{}{"error": err.Error()}})
-		s.runs.Complete(runID, "failed")
+	if plan.UpdateCount == 0 {
+		s.runs.AddEvent(runID, RunEvent{Level: "info", Step: "complete", Message: "No updates available; nothing to apply"})
+		updateSummary()
+		s.runs.Complete(runID, "completed")
 		return
 	}
 
@@ -614,12 +652,8 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 
 	exec := executor.NewExecutor(dockerClient, policyEngine, s.store, logger, false)
 
-	summary := RunSummary{}
-
 	for _, item := range plan.Items {
 		if !item.UpdateAvailable {
-			summary.UpdatesSkipped++
-			s.runs.AddEvent(runID, RunEvent{Level: "info", Target: item.TargetName, Service: item.ServiceName, Step: "skip", Message: "No update available"})
 			continue
 		}
 
@@ -627,7 +661,6 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 		isExplicitlySelected := false
 		if mode == "selected" && len(serviceFilter) > 0 {
 			if !serviceFilter[item.ServiceID] {
-				summary.UpdatesSkipped++
 				continue
 			}
 			isExplicitlySelected = true
@@ -636,6 +669,7 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 		if mode == "safe" && item.Risk != planner.RiskSafe {
 			summary.UpdatesSkipped++
 			s.runs.AddEvent(runID, RunEvent{Level: "info", Target: item.TargetName, Service: item.ServiceName, Step: "skip", Message: "Skipped (not safe)"})
+			updateSummary()
 			continue
 		}
 
@@ -644,6 +678,7 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 		if !item.Allowed && !forceUpdate {
 			summary.UpdatesSkipped++
 			s.runs.AddEvent(runID, RunEvent{Level: "warn", Target: item.TargetName, Service: item.ServiceName, Step: "skip", Message: item.Reason})
+			updateSummary()
 			continue
 		}
 
@@ -654,17 +689,20 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 		if result.Success {
 			summary.UpdatesApplied++
 			s.runs.AddEvent(runID, RunEvent{Level: "info", Target: item.TargetName, Service: item.ServiceName, Step: "complete", Message: "Update applied"})
+			updateSummary()
 			continue
 		}
 
 		if executor.IsSkipError(result.Error) {
 			summary.UpdatesSkipped++
 			s.runs.AddEvent(runID, RunEvent{Level: "warn", Target: item.TargetName, Service: item.ServiceName, Step: "skip", Message: executor.SkipReason(result.Error)})
+			updateSummary()
 			continue
 		}
 
 		summary.UpdatesFailed++
 		s.runs.AddEvent(runID, RunEvent{Level: "error", Target: item.TargetName, Service: item.ServiceName, Step: "failed", Message: fmt.Sprintf("Update failed: %v", result.Error)})
+		updateSummary()
 
 		if policyEngine.ShouldRollback(ctx, result) {
 			s.runs.AddEvent(runID, RunEvent{Level: "warn", Target: item.TargetName, Service: item.ServiceName, Step: "rollback", Message: "Attempting rollback"})
@@ -673,6 +711,7 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 			} else {
 				summary.Rollbacks++
 				s.runs.AddEvent(runID, RunEvent{Level: "info", Target: item.TargetName, Service: item.ServiceName, Step: "rollback", Message: "Rollback complete"})
+				updateSummary()
 			}
 		}
 	}

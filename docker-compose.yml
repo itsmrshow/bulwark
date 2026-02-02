@@ -12,6 +12,7 @@ services:
     - /var/run/docker.sock:/var/run/docker.sock
     - /docker_data:/docker_data:ro
     - bulwark_state:/var/lib/bulwark
+    - bulwark_data:/data
     labels:
     - bulwark.enabled=true
     - bulwark.policy=safe
@@ -20,4 +21,6 @@ services:
     - bulwark.probe.stability_sec=15
 volumes:
   bulwark_state:
+    driver: local
+  bulwark_data:
     driver: local

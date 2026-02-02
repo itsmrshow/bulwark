@@ -99,12 +99,14 @@ func (s *ContainerScanner) ScanContainers(ctx context.Context) ([]state.Target, 
 		}
 
 		// Create a service entry for the container
+		digest := resolveRepoDigest(ctx, s.dockerClient, container.Image, inspect.Image)
+
 		service := state.Service{
 			ID:            state.GenerateServiceID(target.ID, containerName),
 			TargetID:      target.ID,
 			Name:          containerName,
 			Image:         container.Image,
-			CurrentDigest: inspect.Image,
+			CurrentDigest: digest,
 			Labels:        labels,
 			HealthCheck:   parseContainerHealthCheck(inspect.State.Health),
 			CreatedAt:     time.Now(),
@@ -169,12 +171,14 @@ func (s *ContainerScanner) createComposeTarget(ctx context.Context, projectName 
 			continue
 		}
 
+		digest := resolveRepoDigest(ctx, s.dockerClient, container.Image, inspect.Image)
+
 		service := state.Service{
 			ID:            state.GenerateServiceID(target.ID, serviceName),
 			TargetID:      target.ID,
 			Name:          serviceName,
 			Image:         container.Image,
-			CurrentDigest: inspect.Image,
+			CurrentDigest: digest,
 			Labels:        labels,
 			HealthCheck:   parseContainerHealthCheck(inspect.State.Health),
 			CreatedAt:     time.Now(),

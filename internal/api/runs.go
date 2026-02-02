@@ -95,7 +95,11 @@ func (m *RunManager) AddEvent(runID string, event RunEvent) {
 	if !ok {
 		return
 	}
-	event.Timestamp = event.Timestamp.UTC()
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now().UTC()
+	} else {
+		event.Timestamp = event.Timestamp.UTC()
+	}
 	run.Events = append(run.Events, event)
 	if len(run.Events) > m.maxEvents {
 		run.Events = run.Events[len(run.Events)-m.maxEvents:]

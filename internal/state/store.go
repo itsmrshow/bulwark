@@ -36,4 +36,8 @@ type Store interface {
 	// Cleanup operations
 	PruneHistory(ctx context.Context, olderThan time.Time) error
 	PruneStaleTargets(ctx context.Context, olderThan time.Time) error
+
+	// Settings operations
+	GetSetting(ctx context.Context, key string) (string, error)
+	SetSetting(ctx context.Context, key, value string) error
 }
