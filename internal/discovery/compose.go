@@ -32,8 +32,8 @@ func NewComposeScanner(logger *logging.Logger, dockerClient *docker.Client) *Com
 
 // ComposeFile represents a parsed docker-compose.yml file
 type ComposeFile struct {
-	Version  string                       `yaml:"version"`
-	Services map[string]ComposeService    `yaml:"services"`
+	Version  string                    `yaml:"version"`
+	Services map[string]ComposeService `yaml:"services"`
 }
 
 // ComposeService represents a service in docker-compose.yml
@@ -138,7 +138,7 @@ func (s *ComposeScanner) parseComposeFile(ctx context.Context, composePath strin
 		labels := ParseLabels(labelMap, composeService.Image)
 
 		// Get current digest from Docker if container is running
-		digest := s.getCurrentDigest(ctx, target.Name, serviceName)
+		digest := s.getCurrentDigest(ctx, target.Name, serviceName, composeService.Image)
 
 		// Parse healthcheck
 		var healthCheck *state.HealthCheck
@@ -165,7 +165,7 @@ func (s *ComposeScanner) parseComposeFile(ctx context.Context, composePath strin
 }
 
 // getCurrentDigest gets the current digest of a running container
-func (s *ComposeScanner) getCurrentDigest(ctx context.Context, projectName, serviceName string) string {
+func (s *ComposeScanner) getCurrentDigest(ctx context.Context, projectName, serviceName, imageName string) string {
 	// List containers with label filters
 	containers, err := s.dockerClient.ListContainers(ctx, false)
 	if err != nil {
@@ -184,8 +184,7 @@ func (s *ComposeScanner) getCurrentDigest(ctx context.Context, projectName, serv
 				continue
 			}
 
-			// Return the image ID (digest)
-			return inspect.Image
+			return resolveRepoDigest(ctx, s.dockerClient, imageName, inspect.Image)
 		}
 	}
 
@@ -274,4 +273,3 @@ func parseHealthCheck(hc *HealthCheckConfig) *state.HealthCheck {
 
 	return healthCheck
 }
-

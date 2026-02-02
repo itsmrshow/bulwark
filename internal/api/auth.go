@@ -84,7 +84,7 @@ func (s *Server) requireWrite(next http.Handler) http.Handler {
 		}
 
 		if s.cfg.WebToken == "" {
-			writeError(w, http.StatusUnauthorized, "missing token", "BULWARK_WEB_TOKEN is not configured")
+			next.ServeHTTP(w, r)
 			return
 		}
 

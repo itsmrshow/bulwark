@@ -30,7 +30,7 @@ type Scheduler struct {
 // NewScheduler creates a new scheduler
 func NewScheduler(logger *logging.Logger) *Scheduler {
 	return &Scheduler{
-		cron:   cron.New(cron.WithSeconds()),
+		cron:   cron.New(),
 		jobs:   make(map[string]Job),
 		logger: logger.WithComponent("scheduler"),
 	}

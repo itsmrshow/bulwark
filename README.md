@@ -1,6 +1,8 @@
-# Bulwark
-
-**Safe, policy-driven Docker container updater with digest-based change detection and rollback capability.**
+<p align="center">
+  <img src=".github/assets/logo.png" width="140" alt="Bulwark logo" />
+</p>
+<h1 align="center">Bulwark</h1>
+<p align="center"><strong>Safe, policy-driven Docker container updater with digest-based change detection and rollback capability.</strong></p>
 
 Bulwark is a Docker container update management tool designed for safety, transparency, and control. Unlike aggressive auto-updaters, Bulwark provides:
 
@@ -97,6 +99,20 @@ export BULWARK_WEB_TOKEN="your-strong-token"
 ```
 
 Then add `Authorization: Bearer <token>` for write requests, or enter the token in the UI header.
+
+### Notifications (Discord / Slack)
+
+Configure notification webhooks in **Settings** inside the Web Console. You can:
+
+- Enable Discord and/or Slack webhooks
+- Send immediate notifications when updates are found
+- Schedule a daily digest using cron expressions
+
+Notifications are only sent when updates are available.
+
+Environment overrides:
+- `DISCORD_WEBHOOK_URL` / `SLACK_WEBHOOK_URL` will preconfigure webhooks and lock them in the UI.
+- Settings are persisted to `/data/bulwark.json` by default (configure with `BULWARK_DATA_DIR` or `BULWARK_CONFIG_PATH`).
 
 ## Label Configuration
 

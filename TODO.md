@@ -29,3 +29,7 @@
   - [x] Go unit tests: auth middleware + planner fixture
   - [x] README updates (UI run instructions, env vars, security notes)
   - [ ] Commit(s)
+- [x] Phase 9: Apply run visibility fixes
+  - [x] Use cached plan when available for apply runs
+  - [x] Emit plan progress events and live summary updates
+  - [x] Fix run event timestamps

@@ -146,3 +146,19 @@ export interface HistoryResponse {
   has_more: boolean;
   items: HistoryItem[];
 }
+
+export interface NotificationSettings {
+  discord_webhook: string;
+  slack_webhook: string;
+  discord_enabled: boolean;
+  slack_enabled: boolean;
+  notify_on_find: boolean;
+  digest_enabled: boolean;
+  check_cron: string;
+  digest_cron: string;
+}
+
+export interface SettingsResponse {
+  notifications: NotificationSettings;
+  locked?: NotificationSettings;
+}

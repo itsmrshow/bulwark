@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/yourusername/bulwark/internal/logging"
+	"github.com/yourusername/bulwark/internal/notify"
+	"github.com/yourusername/bulwark/internal/planner"
 	"github.com/yourusername/bulwark/internal/state"
 	"golang.org/x/time/rate"
 )
@@ -21,6 +23,7 @@ type Server struct {
 	writeLimiter *rate.Limiter
 	planCache    *planCache
 	sessions     *sessionStore
+	notify       *notify.Manager
 }
 
 // NewServer constructs a new API server.
@@ -28,6 +31,8 @@ func NewServer(cfg Config, logger *logging.Logger) (*Server, error) {
 	if logger == nil {
 		logger = logging.Default()
 	}
+
+	cfg = cfg.WithDefaults()
 
 	var store state.Store
 	if cfg.StateDB != "" {
@@ -49,7 +54,7 @@ func NewServer(cfg Config, logger *logging.Logger) (*Server, error) {
 		limiter = rate.NewLimiter(rate.Limit(cfg.WriteRateRPS), cfg.WriteRateBurst)
 	}
 
-	return &Server{
+	server := &Server{
 		cfg:          cfg,
 		logger:       logger.WithComponent("api"),
 		store:        store,
@@ -57,11 +62,22 @@ func NewServer(cfg Config, logger *logging.Logger) (*Server, error) {
 		writeLimiter: limiter,
 		planCache:    newPlanCache(cfg.PlanCacheTTL),
 		sessions:     newSessionStore(),
-	}, nil
+	}
+
+	settingsStore := notify.NewStore(cfg.ConfigPath, store, logger)
+	server.notify = notify.NewManager(settingsStore, func(ctx context.Context) (*planner.Plan, error) {
+		return server.getPlan(ctx, planRequest{})
+	}, logger)
+	server.notify.Start(context.Background())
+
+	return server, nil
 }
 
 // Close releases server resources.
 func (s *Server) Close() error {
+	if s.notify != nil {
+		s.notify.Stop()
+	}
 	if s.store != nil {
 		return s.store.Close()
 	}
@@ -76,6 +92,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/logout", s.handleLogout)
 	mux.HandleFunc("/api/enable-writes", s.handleEnableWrites)
 	mux.HandleFunc("/api/overview", s.handleOverview)
+	mux.HandleFunc("/api/settings", s.handleSettings)
+	mux.Handle("/api/notifications/test", s.requireWrite(http.HandlerFunc(s.handleNotificationsTest)))
 	mux.HandleFunc("/api/targets", s.handleTargets)
 	mux.HandleFunc("/api/targets/", s.handleTargetByID)
 	mux.HandleFunc("/api/plan", s.handlePlan)

@@ -105,7 +105,11 @@ func (c *Client) FetchDigest(ctx context.Context, image string) (string, error) 
 	// If we got a manifest list, we need to fetch the specific platform manifest
 	if manifest.MediaType == "application/vnd.docker.distribution.manifest.list.v2+json" ||
 		manifest.MediaType == "application/vnd.oci.image.index.v1+json" {
-		c.logger.Debug().Msg("Got manifest list, selecting linux/amd64 platform")
+		if digest != "" {
+			return digest, nil
+		}
+
+		c.logger.Debug().Msg("Got manifest list without digest header, selecting linux/amd64 platform")
 
 		// Find linux/amd64 manifest
 		for _, entry := range manifest.Manifests {

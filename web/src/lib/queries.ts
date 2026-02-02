@@ -7,6 +7,7 @@ import type {
   OverviewResponse,
   Plan,
   Run,
+  SettingsResponse,
   Target
 } from "./types";
 
@@ -73,5 +74,25 @@ export function useApply() {
   return useMutation({
     mutationFn: (payload: Record<string, unknown>) =>
       apiFetch<ApplyResponse>("/api/apply", { method: "POST", body: JSON.stringify(payload) })
+  });
+}
+
+export function useSettings() {
+  return useQuery({
+    queryKey: ["settings"],
+    queryFn: () => apiFetch<SettingsResponse>("/api/settings")
+  });
+}
+
+export function useUpdateSettings() {
+  return useMutation({
+    mutationFn: (payload: SettingsResponse) =>
+      apiFetch<SettingsResponse>("/api/settings", { method: "PUT", body: JSON.stringify(payload) })
+  });
+}
+
+export function useTestNotification() {
+  return useMutation({
+    mutationFn: () => apiFetch("/api/notifications/test", { method: "POST" })
   });
 }

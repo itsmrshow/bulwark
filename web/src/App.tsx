@@ -8,7 +8,9 @@ import {
   Settings,
   Target
 } from "lucide-react";
+import { useEffect } from "react";
 import { useHealth } from "./lib/queries";
+import { apiFetch } from "./lib/api";
 import { ReadOnlyBanner } from "./components/ReadOnlyBanner";
 import { TokenManager } from "./components/TokenManager";
 import { OverviewPage } from "./pages/OverviewPage";
@@ -29,6 +31,12 @@ const navItems = [
 
 export default function App() {
   const { data: health } = useHealth();
+
+  useEffect(() => {
+    if (health && !health.read_only) {
+      apiFetch("/api/enable-writes", { method: "POST" }).catch(() => {});
+    }
+  }, [health]);
 
   return (
     <div className="min-h-screen bg-ink-950 text-ink-100">
