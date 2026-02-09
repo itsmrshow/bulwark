@@ -140,4 +140,4 @@ See README.md roadmap for planned v1.1 and v2.0 features.
 
 ---
 
-[1.0.0]: https://github.com/yourusername/bulwark/releases/tag/v1.0.0
+[1.0.0]: https://github.com/itsmrshow/bulwark/releases/tag/v1.0.0

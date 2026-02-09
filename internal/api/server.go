@@ -7,10 +7,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/yourusername/bulwark/internal/logging"
-	"github.com/yourusername/bulwark/internal/notify"
-	"github.com/yourusername/bulwark/internal/planner"
-	"github.com/yourusername/bulwark/internal/state"
+	"github.com/itsmrshow/bulwark/internal/logging"
+	"github.com/itsmrshow/bulwark/internal/notify"
+	"github.com/itsmrshow/bulwark/internal/planner"
+	"github.com/itsmrshow/bulwark/internal/state"
 	"golang.org/x/time/rate"
 )
 

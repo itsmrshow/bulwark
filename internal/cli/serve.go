@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/yourusername/bulwark/internal/api"
-	"github.com/yourusername/bulwark/internal/logging"
+	"github.com/itsmrshow/bulwark/internal/api"
+	"github.com/itsmrshow/bulwark/internal/logging"
 )
 
 // NewServeCommand creates the serve command

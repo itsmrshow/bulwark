@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yourusername/bulwark/internal/logging"
-	"github.com/yourusername/bulwark/internal/planner"
-	"github.com/yourusername/bulwark/internal/scheduler"
+	"github.com/itsmrshow/bulwark/internal/logging"
+	"github.com/itsmrshow/bulwark/internal/planner"
+	"github.com/itsmrshow/bulwark/internal/scheduler"
 )
 
 type PlanFunc func(ctx context.Context) (*planner.Plan, error)

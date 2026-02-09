@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yourusername/bulwark/internal/docker"
-	"github.com/yourusername/bulwark/internal/logging"
-	"github.com/yourusername/bulwark/internal/state"
+	"github.com/itsmrshow/bulwark/internal/docker"
+	"github.com/itsmrshow/bulwark/internal/logging"
+	"github.com/itsmrshow/bulwark/internal/state"
 )
 
 // Discoverer discovers managed targets (compose projects and containers)

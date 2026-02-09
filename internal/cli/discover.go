@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/yourusername/bulwark/internal/discovery"
-	"github.com/yourusername/bulwark/internal/docker"
-	"github.com/yourusername/bulwark/internal/logging"
-	"github.com/yourusername/bulwark/internal/state"
+	"github.com/itsmrshow/bulwark/internal/discovery"
+	"github.com/itsmrshow/bulwark/internal/docker"
+	"github.com/itsmrshow/bulwark/internal/logging"
+	"github.com/itsmrshow/bulwark/internal/state"
 )
 
 // NewDiscoverCommand creates the discover command

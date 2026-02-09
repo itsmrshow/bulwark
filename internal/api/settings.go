@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/yourusername/bulwark/internal/notify"
+	"github.com/itsmrshow/bulwark/internal/notify"
 )
 
 type settingsResponse struct {

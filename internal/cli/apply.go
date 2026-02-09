@@ -7,13 +7,13 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/yourusername/bulwark/internal/discovery"
-	"github.com/yourusername/bulwark/internal/docker"
-	"github.com/yourusername/bulwark/internal/executor"
-	"github.com/yourusername/bulwark/internal/logging"
-	"github.com/yourusername/bulwark/internal/policy"
-	"github.com/yourusername/bulwark/internal/registry"
-	"github.com/yourusername/bulwark/internal/state"
+	"github.com/itsmrshow/bulwark/internal/discovery"
+	"github.com/itsmrshow/bulwark/internal/docker"
+	"github.com/itsmrshow/bulwark/internal/executor"
+	"github.com/itsmrshow/bulwark/internal/logging"
+	"github.com/itsmrshow/bulwark/internal/policy"
+	"github.com/itsmrshow/bulwark/internal/registry"
+	"github.com/itsmrshow/bulwark/internal/state"
 )
 
 // NewApplyCommand creates the apply command

@@ -5,8 +5,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/yourusername/bulwark/internal/cli"
-	"github.com/yourusername/bulwark/internal/logging"
+	"github.com/itsmrshow/bulwark/internal/cli"
+	"github.com/itsmrshow/bulwark/internal/logging"
 )
 
 var (

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/yourusername/bulwark/internal/logging"
-	"github.com/yourusername/bulwark/internal/state"
+	"github.com/itsmrshow/bulwark/internal/logging"
+	"github.com/itsmrshow/bulwark/internal/state"
 )
 
 // TCPProbe performs TCP connection checks

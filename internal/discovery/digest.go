@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/yourusername/bulwark/internal/docker"
-	"github.com/yourusername/bulwark/internal/registry"
+	"github.com/itsmrshow/bulwark/internal/docker"
+	"github.com/itsmrshow/bulwark/internal/registry"
 )
 
 // resolveRepoDigest returns a repo digest that matches the image reference.
