@@ -46,7 +46,8 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers,
-    credentials: "include" // Important: send session cookies
+    credentials: "include", // Important: send session cookies
+    cache: options.cache ?? "no-store"
   });
 
   if (!response.ok) {

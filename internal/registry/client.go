@@ -160,6 +160,18 @@ func (c *Client) fetchManifest(ctx context.Context, ref *ImageReference, token s
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to fetch manifest: %w", err)
 	}
+	if resp.StatusCode == http.StatusUnauthorized && token == "" {
+		challenge := resp.Header.Get("WWW-Authenticate")
+		_ = resp.Body.Close()
+		if challenge != "" {
+			if newToken, err := c.getTokenFromChallenge(ctx, ref, challenge); err == nil && newToken != "" {
+				cacheKey := fmt.Sprintf("%s/%s", ref.Registry, ref.Repository)
+				c.authCache[cacheKey] = newToken
+				return c.fetchManifest(ctx, ref, newToken)
+			}
+		}
+		return nil, "", fmt.Errorf("unexpected status code %d", resp.StatusCode)
+	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
@@ -177,6 +189,95 @@ func (c *Client) fetchManifest(ctx context.Context, ref *ImageReference, token s
 	}
 
 	return &manifest, digest, nil
+}
+
+func (c *Client) getTokenFromChallenge(ctx context.Context, ref *ImageReference, challenge string) (string, error) {
+	params := parseAuthChallenge(challenge)
+	realm := params["realm"]
+	if realm == "" {
+		return "", fmt.Errorf("auth challenge missing realm")
+	}
+
+	query := url.Values{}
+	if service := params["service"]; service != "" {
+		query.Set("service", service)
+	}
+	scope := params["scope"]
+	if scope == "" {
+		scope = fmt.Sprintf("repository:%s:pull", ref.Repository)
+	}
+	if scope != "" {
+		query.Set("scope", scope)
+	}
+
+	tokenURL := realm
+	if encoded := query.Encode(); encoded != "" {
+		separator := "?"
+		if strings.Contains(tokenURL, "?") {
+			separator = "&"
+		}
+		tokenURL = tokenURL + separator + encoded
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", tokenURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create token request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch token: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
+	}
+
+	var tokenResp TokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return "", fmt.Errorf("failed to decode token response: %w", err)
+	}
+
+	if tokenResp.Token != "" {
+		return tokenResp.Token, nil
+	}
+	if tokenResp.AccessToken != "" {
+		return tokenResp.AccessToken, nil
+	}
+
+	return "", fmt.Errorf("no token in response")
+}
+
+func parseAuthChallenge(header string) map[string]string {
+	challenge := strings.TrimSpace(header)
+	if challenge == "" {
+		return nil
+	}
+	parts := strings.SplitN(challenge, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return nil
+	}
+
+	params := make(map[string]string)
+	for _, part := range strings.Split(parts[1], ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(kv[0])
+		value := strings.Trim(strings.TrimSpace(kv[1]), "\"")
+		if key != "" {
+			params[key] = value
+		}
+	}
+
+	return params
 }
 
 // getAuthToken gets an auth token for the registry

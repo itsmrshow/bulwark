@@ -18,7 +18,7 @@ Bulwark is a Docker container update management tool designed for safety, transp
 - **Discovery**: Scans Docker Compose projects and labeled containers
 - **Update Detection**: Compares local vs remote registry digests
 - **Safe Updates**: Applies updates with health probes and rollback
-- **Flexible Triggers**: Scheduled (cron) or webhook-triggered
+- **Notification Scheduling**: Cron-based immediate alerts or daily digests
 - **Compose-aware**: Uses `docker compose` for proper project handling
 - **Loose Container Support**: Manages standalone containers via definition labels
 
@@ -29,6 +29,8 @@ Bulwark is a Docker container update management tool designed for safety, transp
 ```bash
 go install github.com/yourusername/bulwark/cmd/bulwark@latest
 ```
+
+Replace `github.com/yourusername/bulwark` with your actual repo path if you fork.
 
 Or build from source:
 
@@ -77,13 +79,23 @@ npm run dev
 
 Open `http://localhost:5173` for the Vite dev server (it proxies `/api` to `http://localhost:8080`).
 
-### Docker
+### Docker Compose (recommended)
+
+```bash
+cp .env.example .env
+# Edit .env as needed (do not commit it)
+docker compose up -d --build bulwark
+```
+
+Visit `http://localhost:8085` to access the Web Console (default compose port).
+
+### Docker (single container)
 
 ```bash
 docker build -t bulwark:dev .
 docker run --rm -p 8080:8080 \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  -v /docker_data:/docker_data \
+  -v /docker_data:/docker_data:ro \
   -e BULWARK_UI_ENABLED=true \
   -e BULWARK_UI_READONLY=true \
   bulwark:dev
@@ -198,36 +210,6 @@ docker run -d \
 - `BULWARK_WEB_WRITE_RPS=1` - Write endpoint rate limit (requests per second)
 - `BULWARK_WEB_WRITE_BURST=3` - Write endpoint burst capacity
 
-## Configuration File
-
-Create `/etc/bulwark/config.yaml`:
-
-```yaml
-discovery:
-  base_path: "/docker_data"
-  scan_interval: "5m"
-
-scheduler:
-  enabled: true
-  check_cron: "0 */6 * * *"  # Every 6 hours
-  apply_cron: "0 2 * * *"    # 2 AM daily
-
-webhook:
-  enabled: true
-  listen_addr: ":8080"
-  token: "${BULWARK_WEBHOOK_TOKEN}"
-  allowed_ips:
-    - "10.0.0.0/8"
-
-state:
-  backend: "sqlite"
-  path: "/var/lib/bulwark/state.db"
-
-logging:
-  level: "info"
-  format: "json"
-```
-
 ## Security Considerations
 
 ⚠️ **Docker Socket Access**: Bulwark requires access to `/var/run/docker.sock`, which provides full Docker daemon control. Run Bulwark in a trusted environment only.
@@ -235,8 +217,6 @@ logging:
 - Web Console is read-only by default
 - Write actions require `BULWARK_WEB_TOKEN` and bearer auth
 - Keep the API on an internal network and use a reverse proxy (Traefik/HAProxy/Cloudflare Access) for additional auth
-- Optional IP allowlist for additional security
-- Secrets are redacted from logs automatically
 - Stateful services (databases) protected by default
 
 ## Development
@@ -285,8 +265,8 @@ make docker-build
 
 ### v2.0 (Future)
 
-- Multi-registry support (GitLab, GitHub, Harbor, GHCR)
-- Notification system (Slack, Discord, email, PagerDuty)
+- Private registry auth helpers and broader registry support
+- Notification integrations (email, PagerDuty, etc.)
 - Update windows (time-based restrictions)
 - Canary deployments (gradual rollouts)
 - Pre/post update hooks (custom scripts)
