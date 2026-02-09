@@ -20,16 +20,15 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PAT || github.token }}
 
-      - name: Warn when using default token
-        if: ${{ secrets.RELEASE_PAT == '' }}
-        run: |
-          echo "::warning::RELEASE_PAT is not set. Tag push may not trigger downstream workflows (including docker-publish)."
-
       - name: Auto-tag next patch version
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PAT || github.token }}
         run: |
           set -euo pipefail
+
+          if [ "${{ secrets.RELEASE_PAT != '' }}" != "true" ]; then
+            echo "::warning::RELEASE_PAT is not set. Tag push may not trigger downstream workflows (including docker-publish)."
+          fi
 
           # Skip if this commit already has a tag
           if git tag --points-at HEAD | grep -q .; then
