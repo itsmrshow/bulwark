@@ -27,15 +27,15 @@ Bulwark is a Docker container update management tool designed for safety, transp
 ### Installation
 
 ```bash
-go install github.com/yourusername/bulwark/cmd/bulwark@latest
+go install github.com/itsmrshow/bulwark/cmd/bulwark@latest
 ```
 
-Replace `github.com/yourusername/bulwark` with your actual repo path if you fork.
+Replace `github.com/itsmrshow/bulwark` with your actual repo path if you fork.
 
 Or build from source:
 
 ```bash
-git clone https://github.com/yourusername/bulwark.git
+git clone https://github.com/itsmrshow/bulwark.git
 cd bulwark
 make build
 ```
@@ -102,6 +102,24 @@ docker run --rm -p 8080:8080 \
 ```
 
 Visit `http://localhost:8080` to access the Web Console.
+
+## Docker Hub CI (GitHub Actions)
+
+This repo includes a workflow to build and push Docker images to Docker Hub on:
+- pushes to `main` (tagged as `latest`)
+- semantic version tags like `v1.2.3`
+
+Required GitHub secrets:
+- `DOCKERHUB_USERNAME` – your Docker Hub username
+- `DOCKERHUB_TOKEN` – a Docker Hub access token
+- `DOCKERHUB_REPO` – the full image name (e.g., `myuser/bulwark`)
+
+### Automatic versioning
+
+On every push to `main`, a GitHub Action creates a new patch tag (e.g., `v1.0.1`, `v1.0.2`).  
+The Docker publish workflow picks up those tags and pushes versioned images.
+
+To skip auto-tagging for a commit, include `[skip release]` in the commit message.
 
 ### Enabling write actions
 

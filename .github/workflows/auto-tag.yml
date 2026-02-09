@@ -1,0 +1,57 @@
+name: Auto Tag Release
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: write
+
+env:
+  STARTING_VERSION: 1.0.1
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Auto-tag next patch version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Skip if this commit already has a tag
+          if git tag --points-at HEAD | grep -q .; then
+            echo "Commit already tagged. Skipping."
+            exit 0
+          fi
+
+          # Optional skip flag in commit message
+          if git log -1 --pretty=%B | grep -qiE "\\[skip release\\]"; then
+            echo "Skip release requested. Skipping."
+            exit 0
+          fi
+
+          git fetch --tags
+          latest_tag="$(git tag -l 'v*' --sort=-v:refname | head -n1 || true)"
+
+          if [ -z "${latest_tag}" ]; then
+            next_tag="v${STARTING_VERSION}"
+          else
+            version="${latest_tag#v}"
+            IFS='.' read -r major minor patch <<< "${version}"
+            patch="${patch:-0}"
+            next_patch=$((patch + 1))
+            next_tag="v${major}.${minor}.${next_patch}"
+          fi
+
+          echo "Tagging ${next_tag}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${next_tag}"
+          git push origin "${next_tag}"
