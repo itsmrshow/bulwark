@@ -24,7 +24,31 @@ Bulwark is a Docker container update management tool designed for safety, transp
 
 ## Quick Start
 
-### Installation
+### Docker Compose (recommended)
+
+```bash
+cp .env.example .env
+# Edit .env as needed (do not commit it)
+docker compose up -d --build bulwark
+```
+
+Visit `http://localhost:8085` to access the Web Console (default compose port).
+
+### Docker (single container)
+
+```bash
+docker build -t bulwark:dev .
+docker run --rm -p 8080:8080 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /docker_data:/docker_data:ro \
+  -e BULWARK_UI_ENABLED=true \
+  -e BULWARK_UI_READONLY=true \
+  bulwark:dev
+```
+
+Visit `http://localhost:8080` to access the Web Console.
+
+### Build from source (preferred for development/customization)
 
 ```bash
 go install github.com/itsmrshow/bulwark/cmd/bulwark@latest
@@ -32,7 +56,7 @@ go install github.com/itsmrshow/bulwark/cmd/bulwark@latest
 
 Replace `github.com/itsmrshow/bulwark` with your actual repo path if you fork.
 
-Or build from source:
+Or build manually:
 
 ```bash
 git clone https://github.com/itsmrshow/bulwark.git
@@ -78,49 +102,6 @@ npm run dev
 ```
 
 Open `http://localhost:5173` for the Vite dev server (it proxies `/api` to `http://localhost:8080`).
-
-### Docker Compose (recommended)
-
-```bash
-cp .env.example .env
-# Edit .env as needed (do not commit it)
-docker compose up -d --build bulwark
-```
-
-Visit `http://localhost:8085` to access the Web Console (default compose port).
-
-### Docker (single container)
-
-```bash
-docker build -t bulwark:dev .
-docker run --rm -p 8080:8080 \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v /docker_data:/docker_data:ro \
-  -e BULWARK_UI_ENABLED=true \
-  -e BULWARK_UI_READONLY=true \
-  bulwark:dev
-```
-
-Visit `http://localhost:8080` to access the Web Console.
-
-## Docker Hub CI (GitHub Actions)
-
-This repo includes a workflow to build and push Docker images to Docker Hub on:
-- pushes to `main` (tagged as `latest`)
-- semantic version tags like `v1.2.3`
-
-Required GitHub secrets:
-- `DOCKERHUB_USERNAME` – your Docker Hub username
-- `DOCKERHUB_TOKEN` – a Docker Hub access token
-- `DOCKERHUB_REPO` – the full image name (e.g., `myuser/bulwark`)
-- `RELEASE_PAT` – PAT used by auto-tag workflow so tag pushes trigger `docker-publish`
-
-### Automatic versioning
-
-On every push to `main`, a GitHub Action creates a new patch tag (e.g., `v1.0.1`, `v1.0.2`).  
-The Docker publish workflow picks up those tags and pushes versioned images.
-
-To skip auto-tagging for a commit, include `[skip release]` in the commit message.
 
 ### Enabling write actions
 
