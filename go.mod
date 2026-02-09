@@ -1,4 +1,4 @@
-module github.com/yourusername/bulwark
+module github.com/itsmrshow/bulwark
 
 go 1.24.0
 
