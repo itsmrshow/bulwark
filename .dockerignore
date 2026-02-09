@@ -13,7 +13,7 @@ Thumbs.db
 vendor/
 dist/
 build/
-bulwark
+/bulwark
 *.db
 *.db-journal
 state/
