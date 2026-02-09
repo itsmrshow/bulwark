@@ -58,7 +58,10 @@ export function useRun(runId?: string) {
     queryKey: ["run", runId],
     queryFn: () => apiFetch<Run>(`/api/runs/${runId}`),
     enabled: Boolean(runId),
-    refetchInterval: (data) => (data?.status === "running" ? 1000 : false)
+    refetchInterval: 1000,
+    refetchIntervalInBackground: true,
+    retry: true,
+    retryDelay: 1000
   });
 }
 

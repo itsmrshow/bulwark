@@ -1,6 +1,5 @@
 import { NavLink, Route, Routes } from "react-router-dom";
 import {
-  Activity,
   ClipboardList,
   History,
   LayoutDashboard,
@@ -43,9 +42,11 @@ export default function App() {
       <div className="flex min-h-screen">
         <aside className="hidden w-64 flex-col border-r border-ink-800 bg-ink-900/60 p-6 lg:flex">
           <div className="mb-10 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-signal-500/20 text-signal-500">
-              <Activity className="h-5 w-5" />
-            </div>
+            <img
+              src="/logo-64.png"
+              alt="Bulwark logo"
+              className="h-10 w-10 rounded-xl border border-ink-700/60 bg-ink-900/60 p-1"
+            />
             <div>
               <h1 className="font-display text-lg">Bulwark</h1>
               <p className="text-xs text-ink-400">Web Console</p>
@@ -80,9 +81,16 @@ export default function App() {
         <main className="flex-1">
           <div className="border-b border-ink-800/60 bg-ink-900/40 px-6 py-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h2 className="font-display text-2xl">Bulwark Web Console</h2>
-                <p className="text-sm text-ink-300">Plan before apply. Observe everything.</p>
+              <div className="flex items-center gap-3">
+                <img
+                  src="/logo-64.png"
+                  alt="Bulwark logo"
+                  className="h-9 w-9 rounded-lg border border-ink-700/60 bg-ink-900/60 p-1"
+                />
+                <div>
+                  <h2 className="font-display text-2xl">Bulwark Web Console</h2>
+                  <p className="text-sm text-ink-300">Plan before apply. Observe everything.</p>
+                </div>
               </div>
               <TokenManager />
             </div>
