@@ -113,6 +113,7 @@ Required GitHub secrets:
 - `DOCKERHUB_USERNAME` – your Docker Hub username
 - `DOCKERHUB_TOKEN` – a Docker Hub access token
 - `DOCKERHUB_REPO` – the full image name (e.g., `myuser/bulwark`)
+- `RELEASE_PAT` – PAT used by auto-tag workflow so tag pushes trigger `docker-publish`
 
 ### Automatic versioning
 
