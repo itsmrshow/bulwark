@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yourusername/bulwark/internal/logging"
+	"github.com/itsmrshow/bulwark/internal/logging"
 )
 
 // LockManager manages per-target locks to prevent concurrent updates

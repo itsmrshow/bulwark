@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yourusername/bulwark/internal/planner"
+	"github.com/itsmrshow/bulwark/internal/planner"
 )
 
 type planCache struct {

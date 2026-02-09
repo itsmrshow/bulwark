@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yourusername/bulwark/internal/docker"
-	"github.com/yourusername/bulwark/internal/logging"
-	"github.com/yourusername/bulwark/internal/policy"
-	"github.com/yourusername/bulwark/internal/probe"
-	"github.com/yourusername/bulwark/internal/state"
+	"github.com/itsmrshow/bulwark/internal/docker"
+	"github.com/itsmrshow/bulwark/internal/logging"
+	"github.com/itsmrshow/bulwark/internal/policy"
+	"github.com/itsmrshow/bulwark/internal/probe"
+	"github.com/itsmrshow/bulwark/internal/state"
 )
 
 // Executor orchestrates updates for all target types

@@ -12,13 +12,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yourusername/bulwark/internal/discovery"
-	"github.com/yourusername/bulwark/internal/docker"
-	"github.com/yourusername/bulwark/internal/executor"
-	"github.com/yourusername/bulwark/internal/planner"
-	"github.com/yourusername/bulwark/internal/policy"
-	"github.com/yourusername/bulwark/internal/registry"
-	"github.com/yourusername/bulwark/internal/state"
+	"github.com/itsmrshow/bulwark/internal/discovery"
+	"github.com/itsmrshow/bulwark/internal/docker"
+	"github.com/itsmrshow/bulwark/internal/executor"
+	"github.com/itsmrshow/bulwark/internal/planner"
+	"github.com/itsmrshow/bulwark/internal/policy"
+	"github.com/itsmrshow/bulwark/internal/registry"
+	"github.com/itsmrshow/bulwark/internal/state"
 )
 
 type healthResponse struct {

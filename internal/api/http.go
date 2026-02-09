@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yourusername/bulwark/internal/logging"
+	"github.com/itsmrshow/bulwark/internal/logging"
 )
 
 type apiError struct {

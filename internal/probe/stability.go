@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yourusername/bulwark/internal/logging"
-	"github.com/yourusername/bulwark/internal/state"
+	"github.com/itsmrshow/bulwark/internal/logging"
+	"github.com/itsmrshow/bulwark/internal/state"
 )
 
 // StabilityProbe waits for a stability window without restarts

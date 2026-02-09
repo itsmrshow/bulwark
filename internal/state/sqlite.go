@@ -8,7 +8,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/yourusername/bulwark/internal/logging"
+	"github.com/itsmrshow/bulwark/internal/logging"
 )
 
 // SQLiteStore implements Store using SQLite
