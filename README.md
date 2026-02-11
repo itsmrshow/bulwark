@@ -3,6 +3,17 @@
 </p>
 <h1 align="center">Bulwark</h1>
 <p align="center"><strong>Safe, policy-driven Docker container updater with digest-based change detection and rollback capability.</strong></p>
+<p align="center">
+  <a href="https://github.com/itsmrshow/bulwark/actions/workflows/docker-publish.yml">
+    <img src="https://github.com/itsmrshow/bulwark/actions/workflows/docker-publish.yml/badge.svg?branch=main" alt="GitHub Build Status" />
+  </a>
+  <a href="https://hub.docker.com/r/itsmrshow/bulwark">
+    <img src="https://img.shields.io/docker/v/itsmrshow/bulwark?sort=semver&label=Docker%20Hub%20Tag" alt="Docker Hub Tag" />
+  </a>
+  <a href="https://hub.docker.com/r/itsmrshow/bulwark">
+    <img src="https://img.shields.io/docker/pulls/itsmrshow/bulwark" alt="Docker Hub Pulls" />
+  </a>
+</p>
 
 Bulwark is a Docker container update management tool designed for safety, transparency, and control. Unlike aggressive auto-updaters, Bulwark provides:
 
