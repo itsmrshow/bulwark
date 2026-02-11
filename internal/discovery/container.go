@@ -3,6 +3,9 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/itsmrshow/bulwark/internal/docker"
@@ -133,11 +136,7 @@ func (s *ContainerScanner) createComposeTarget(ctx context.Context, projectName 
 		return nil
 	}
 
-	// Get the compose file path from the first container's working dir label (if available)
-	composePath := ""
-	if workingDir, ok := containers[0].Labels["com.docker.compose.project.working_dir"]; ok {
-		composePath = workingDir + "/docker-compose.yml"
-	}
+	composePath := resolveComposePath(containers[0].Labels)
 
 	// Create target
 	target := state.Target{
@@ -200,6 +199,36 @@ func (s *ContainerScanner) createComposeTarget(ctx context.Context, projectName 
 		Msg("Found compose project from running containers")
 
 	return &target
+}
+
+func resolveComposePath(labels map[string]string) string {
+	if labels == nil {
+		return ""
+	}
+
+	// Prefer Docker's explicit config path when available.
+	if configFiles, ok := labels["com.docker.compose.project.config_files"]; ok && strings.TrimSpace(configFiles) != "" {
+		first := strings.Split(configFiles, ",")[0]
+		return strings.TrimSpace(first)
+	}
+
+	workingDir, ok := labels["com.docker.compose.project.working_dir"]
+	if !ok || strings.TrimSpace(workingDir) == "" {
+		return ""
+	}
+
+	candidateYml := filepath.Join(workingDir, "docker-compose.yml")
+	if _, err := os.Stat(candidateYml); err == nil {
+		return candidateYml
+	}
+
+	candidateYaml := filepath.Join(workingDir, "docker-compose.yaml")
+	if _, err := os.Stat(candidateYaml); err == nil {
+		return candidateYaml
+	}
+
+	// Best effort fallback.
+	return candidateYml
 }
 
 // getContainerName extracts a clean container name from the Names array

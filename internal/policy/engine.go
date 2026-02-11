@@ -126,6 +126,15 @@ func (e *Engine) EvaluateAll(ctx context.Context, checks []state.UpdateCheck) []
 
 // ShouldRollback determines if a failed update should be rolled back
 func (e *Engine) ShouldRollback(ctx context.Context, result *state.UpdateResult) bool {
+	if result == nil {
+		return false
+	}
+
+	// Rollback already completed in executor path.
+	if result.RollbackPerformed {
+		return false
+	}
+
 	// Always rollback on failure for safe and aggressive policies
 	if !result.Success {
 		return true

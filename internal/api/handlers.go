@@ -704,7 +704,11 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 		s.runs.AddEvent(runID, RunEvent{Level: "error", Target: item.TargetName, Service: item.ServiceName, Step: "failed", Message: fmt.Sprintf("Update failed: %v", result.Error)})
 		updateSummary()
 
-		if policyEngine.ShouldRollback(ctx, result) {
+		if result.RollbackPerformed {
+			summary.Rollbacks++
+			s.runs.AddEvent(runID, RunEvent{Level: "info", Target: item.TargetName, Service: item.ServiceName, Step: "rollback", Message: "Rollback complete"})
+			updateSummary()
+		} else if policyEngine.ShouldRollback(ctx, result) {
 			s.runs.AddEvent(runID, RunEvent{Level: "warn", Target: item.TargetName, Service: item.ServiceName, Step: "rollback", Message: "Attempting rollback"})
 			if err := exec.ExecuteRollback(ctx, item.Target, item.Service, result); err != nil {
 				s.runs.AddEvent(runID, RunEvent{Level: "error", Target: item.TargetName, Service: item.ServiceName, Step: "rollback", Message: fmt.Sprintf("Rollback failed: %v", err)})
@@ -712,6 +716,20 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 				summary.Rollbacks++
 				s.runs.AddEvent(runID, RunEvent{Level: "info", Target: item.TargetName, Service: item.ServiceName, Step: "rollback", Message: "Rollback complete"})
 				updateSummary()
+			}
+		}
+
+		// Update-path failures without probes are not persisted by executor; store once here
+		// after rollback handling so history reflects the final outcome.
+		if s.store != nil && len(result.ProbeResults) == 0 {
+			if err := s.store.SaveUpdateResult(ctx, result); err != nil {
+				s.runs.AddEvent(runID, RunEvent{
+					Level:   "warn",
+					Target:  item.TargetName,
+					Service: item.ServiceName,
+					Step:    "history",
+					Message: fmt.Sprintf("Failed to save update history: %v", err),
+				})
 			}
 		}
 	}

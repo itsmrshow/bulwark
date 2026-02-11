@@ -235,13 +235,6 @@ func (e *Executor) ExecuteRollback(ctx context.Context, target *state.Target, se
 	result.RollbackPerformed = true
 	result.RollbackDigest = result.OldDigest
 
-	// Save updated result
-	if e.store != nil {
-		if err := e.store.SaveUpdateResult(ctx, result); err != nil {
-			e.logger.Warn().Err(err).Msg("Failed to save rollback result")
-		}
-	}
-
 	e.logger.Info().
 		Str("service", service.Name).
 		Msg("Rollback completed successfully")
