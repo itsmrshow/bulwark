@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/itsmrshow/bulwark/internal/logging"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // SQLiteStore implements Store using SQLite
@@ -133,6 +133,15 @@ func (s *SQLiteStore) SaveTarget(ctx context.Context, target *Target) error {
 		target.CreatedAt = now
 	}
 	target.UpdatedAt = now
+
+	// Target names are unique; if the discovered ID changed (for example compose path normalization),
+	// keep using the existing stored ID so foreign key references remain valid.
+	var existingID string
+	if err := s.db.QueryRowContext(ctx, `SELECT id FROM targets WHERE name = ?`, target.Name).Scan(&existingID); err == nil {
+		target.ID = existingID
+	} else if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("failed to check existing target by name: %w", err)
+	}
 
 	query := `
 		INSERT INTO targets (id, type, name, path, labels_json, created_at, updated_at)
@@ -307,6 +316,14 @@ func (s *SQLiteStore) SaveService(ctx context.Context, service *Service) error {
 		service.CreatedAt = now
 	}
 	service.UpdatedAt = now
+
+	// Service names are unique per target. Reuse existing ID if target/name already exists.
+	var existingID string
+	if err := s.db.QueryRowContext(ctx, `SELECT id FROM services WHERE target_id = ? AND name = ?`, service.TargetID, service.Name).Scan(&existingID); err == nil {
+		service.ID = existingID
+	} else if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("failed to check existing service by target/name: %w", err)
+	}
 
 	query := `
 		INSERT INTO services (id, target_id, name, image, current_digest, labels_json, created_at, updated_at)

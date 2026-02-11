@@ -232,6 +232,15 @@ func MapHistory(results []state.UpdateResult) []HistoryItem {
 		if result.Error != nil {
 			message = result.Error.Error()
 		}
+
+		completedAt := result.CompletedAt
+		durationSec := 0.0
+		if completedAt.IsZero() || completedAt.Before(result.StartedAt) {
+			completedAt = result.StartedAt
+		} else {
+			durationSec = completedAt.Sub(result.StartedAt).Seconds()
+		}
+
 		probesPassed := 0
 		probesFailed := 0
 		for _, probe := range result.ProbeResults {
@@ -251,10 +260,10 @@ func MapHistory(results []state.UpdateResult) []HistoryItem {
 			RolledBack:   result.RollbackPerformed,
 			ErrorMessage: message,
 			StartedAt:    result.StartedAt,
-			CompletedAt:  result.CompletedAt,
+			CompletedAt:  completedAt,
 			ProbesPassed: probesPassed,
 			ProbesFailed: probesFailed,
-			DurationSec:  result.CompletedAt.Sub(result.StartedAt).Seconds(),
+			DurationSec:  durationSec,
 		})
 	}
 	return items

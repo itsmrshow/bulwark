@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -110,9 +111,12 @@ func (e *ComposeExecutor) Rollback(ctx context.Context, target *state.Target, se
 		Str("digest", digest).
 		Msg("Rolling back service to previous digest")
 
-	// Step 1: Pull the specific digest
-	// Format: image@digest
-	imageWithDigest := fmt.Sprintf("%s@%s", service.Image, digest)
+	baseImage := service.Image
+	if strings.Contains(baseImage, "@") {
+		parts := strings.Split(service.Image, "@")
+		baseImage = parts[0]
+	}
+	imageWithDigest := fmt.Sprintf("%s@%s", baseImage, digest)
 
 	e.logger.Info().
 		Str("image", imageWithDigest).
@@ -122,21 +126,20 @@ func (e *ComposeExecutor) Rollback(ctx context.Context, target *state.Target, se
 		return fmt.Errorf("failed to pull previous digest: %w", err)
 	}
 
-	// Step 2: Tag with original tag for compose compatibility
-	taggedImage := service.Image
-	if strings.Contains(taggedImage, "@") {
-		// Remove digest, keep tag/repository
-		parts := strings.Split(service.Image, "@")
-		taggedImage = parts[0]
+	// Step 2: Pin rollback image via temporary compose override to guarantee digest recreation.
+	overrideFile, err := os.CreateTemp("", "bulwark-rollback-*.yml")
+	if err != nil {
+		return fmt.Errorf("failed to create rollback override file: %w", err)
 	}
+	overridePath := overrideFile.Name()
+	defer func() {
+		_ = overrideFile.Close()
+		_ = os.Remove(overridePath)
+	}()
 
-	e.logger.Debug().
-		Str("source", digest).
-		Str("target", taggedImage).
-		Msg("Tagging image")
-
-	if err := e.dockerClient.ImageTag(ctx, digest, taggedImage); err != nil {
-		e.logger.Warn().Err(err).Msg("Failed to tag image, continuing anyway")
+	overrideContent := fmt.Sprintf("services:\n  %s:\n    image: %s\n", service.Name, imageWithDigest)
+	if _, err := overrideFile.WriteString(overrideContent); err != nil {
+		return fmt.Errorf("failed to write rollback override file: %w", err)
 	}
 
 	// Step 3: Recreate service with rolled-back image
@@ -144,7 +147,7 @@ func (e *ComposeExecutor) Rollback(ctx context.Context, target *state.Target, se
 		Str("service", service.Name).
 		Msg("Recreating service with previous version")
 
-	if err := e.runner.Up(ctx, target.Path, service.Name, true); err != nil {
+	if err := e.runner.UpWithOverride(ctx, target.Path, overridePath, service.Name, true); err != nil {
 		return fmt.Errorf("failed to recreate service during rollback: %w", err)
 	}
 

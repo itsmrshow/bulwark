@@ -3,6 +3,7 @@ package planner
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/itsmrshow/bulwark/internal/logging"
 	"github.com/itsmrshow/bulwark/internal/policy"
@@ -89,5 +90,39 @@ func TestPlannerBuildPlan(t *testing.T) {
 	}
 	if item.Risk != RiskSafe {
 		t.Fatalf("expected risk %s, got %s", RiskSafe, item.Risk)
+	}
+}
+
+func TestMapHistoryClampsInvalidCompletionTimes(t *testing.T) {
+	started := time.Date(2026, 2, 9, 20, 40, 49, 0, time.UTC)
+
+	items := MapHistory([]state.UpdateResult{
+		{
+			TargetID:    "t1",
+			ServiceID:   "s1",
+			ServiceName: "svc",
+			StartedAt:   started,
+			CompletedAt: time.Time{},
+		},
+		{
+			TargetID:    "t2",
+			ServiceID:   "s2",
+			ServiceName: "svc2",
+			StartedAt:   started,
+			CompletedAt: started.Add(-time.Second),
+		},
+	})
+
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(items))
+	}
+
+	for _, item := range items {
+		if item.DurationSec != 0 {
+			t.Fatalf("expected zero duration for invalid completed_at, got %f", item.DurationSec)
+		}
+		if !item.CompletedAt.Equal(item.StartedAt) {
+			t.Fatalf("expected completed_at to be clamped to started_at")
+		}
 	}
 }

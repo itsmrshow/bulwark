@@ -172,6 +172,7 @@ func GetEnabledServices(targets []state.Target) []struct {
 func (d *Discoverer) persistTargets(ctx context.Context, targets []state.Target) error {
 	for i := range targets {
 		target := &targets[i]
+		originalTargetID := target.ID
 
 		// Save target
 		if err := d.store.SaveTarget(ctx, target); err != nil {
@@ -180,6 +181,14 @@ func (d *Discoverer) persistTargets(ctx context.Context, targets []state.Target)
 				Str("target_id", target.ID).
 				Msg("Failed to save target")
 			continue
+		}
+
+		// If target ID was normalized/reused by the store, update service foreign keys.
+		if target.ID != originalTargetID {
+			for j := range target.Services {
+				target.Services[j].TargetID = target.ID
+				target.Services[j].ID = state.GenerateServiceID(target.ID, target.Services[j].Name)
+			}
 		}
 
 		// Save services

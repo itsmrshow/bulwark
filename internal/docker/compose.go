@@ -30,18 +30,34 @@ func NewComposeRunner() *ComposeRunner {
 
 // buildCommand builds a docker compose command
 func (r *ComposeRunner) buildCommand(ctx context.Context, composePath string, args ...string) *exec.Cmd {
+	return r.buildCommandWithFiles(ctx, []string{composePath}, args...)
+}
+
+// buildCommandWithFiles builds a docker compose command with one or more compose files.
+func (r *ComposeRunner) buildCommandWithFiles(ctx context.Context, composePaths []string, args ...string) *exec.Cmd {
+	if len(composePaths) == 0 {
+		return exec.CommandContext(ctx, "false")
+	}
+
 	var cmdArgs []string
 
 	if r.composeBinary == "docker" {
 		// Docker v2 plugin style: docker compose
-		cmdArgs = append([]string{"compose", "-f", composePath}, args...)
+		cmdArgs = append(cmdArgs, "compose")
+		for _, composePath := range composePaths {
+			cmdArgs = append(cmdArgs, "-f", composePath)
+		}
+		cmdArgs = append(cmdArgs, args...)
 	} else {
 		// Legacy docker-compose
-		cmdArgs = append([]string{"-f", composePath}, args...)
+		for _, composePath := range composePaths {
+			cmdArgs = append(cmdArgs, "-f", composePath)
+		}
+		cmdArgs = append(cmdArgs, args...)
 	}
 
 	cmd := exec.CommandContext(ctx, r.composeBinary, cmdArgs...)
-	cmd.Dir = filepath.Dir(composePath)
+	cmd.Dir = filepath.Dir(composePaths[0])
 
 	return cmd
 }
@@ -68,6 +84,19 @@ func (r *ComposeRunner) Pull(ctx context.Context, composePath, service string) e
 
 // Up starts services
 func (r *ComposeRunner) Up(ctx context.Context, composePath, service string, forceRecreate bool) error {
+	return r.upWithFiles(ctx, []string{composePath}, service, forceRecreate)
+}
+
+// UpWithOverride starts services using a base compose file plus a one-off override file.
+func (r *ComposeRunner) UpWithOverride(ctx context.Context, composePath, overridePath, service string, forceRecreate bool) error {
+	files := []string{composePath}
+	if strings.TrimSpace(overridePath) != "" {
+		files = append(files, overridePath)
+	}
+	return r.upWithFiles(ctx, files, service, forceRecreate)
+}
+
+func (r *ComposeRunner) upWithFiles(ctx context.Context, composeFiles []string, service string, forceRecreate bool) error {
 	args := []string{"up", "-d"}
 
 	if forceRecreate {
@@ -78,7 +107,7 @@ func (r *ComposeRunner) Up(ctx context.Context, composePath, service string, for
 		args = append(args, "--no-deps", service)
 	}
 
-	cmd := r.buildCommand(ctx, composePath, args...)
+	cmd := r.buildCommandWithFiles(ctx, composeFiles, args...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -159,7 +188,7 @@ func FindComposeFiles(root string) ([]string, error) {
 		name := info.Name()
 		if strings.HasPrefix(name, "docker-compose") && (strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml")) {
 			composeFiles = append(composeFiles, path)
-		} else if (name == "compose.yml" || name == "compose.yaml") {
+		} else if name == "compose.yml" || name == "compose.yaml" {
 			composeFiles = append(composeFiles, path)
 		}
 
