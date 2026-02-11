@@ -40,7 +40,8 @@ Bulwark is a Docker container update management tool designed for safety, transp
 ```bash
 cp .env.example .env
 # Edit .env as needed (do not commit it)
-docker compose up -d --build bulwark
+docker compose pull bulwark
+docker compose up -d bulwark
 ```
 
 Visit `http://localhost:8085` to access the Web Console (default compose port).

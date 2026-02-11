@@ -43,7 +43,7 @@ export default function App() {
         <aside className="hidden w-64 flex-col border-r border-ink-800 bg-ink-900/60 p-6 lg:flex">
           <div className="mb-10 flex items-center gap-3">
             <img
-              src="/logo-64.png"
+              src="/logo-128.png"
               alt="Bulwark logo"
               className="h-10 w-10 rounded-xl border border-ink-700/60 bg-ink-900/60 p-1"
             />
@@ -83,7 +83,7 @@ export default function App() {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-center gap-3">
                 <img
-                  src="/logo-64.png"
+                  src="/logo-128.png"
                   alt="Bulwark logo"
                   className="h-9 w-9 rounded-lg border border-ink-700/60 bg-ink-900/60 p-1"
                 />

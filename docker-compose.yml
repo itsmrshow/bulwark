@@ -1,7 +1,6 @@
 services:
   bulwark:
-    build: .
-    image: bulwark:dev
+    image: itsmrshow/bulwark:latest
     container_name: bulwark
     restart: unless-stopped
     ports:
