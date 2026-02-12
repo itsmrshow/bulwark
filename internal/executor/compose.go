@@ -30,6 +30,14 @@ func NewComposeExecutor(dockerClient *docker.Client, logger *logging.Logger) *Co
 
 // UpdateService updates a service in a compose project
 func (e *ComposeExecutor) UpdateService(ctx context.Context, target *state.Target, service *state.Service) error {
+	if e.shouldSkipSelfUpdate(ctx, target, service) {
+		e.logger.Warn().
+			Str("target", target.Name).
+			Str("service", service.Name).
+			Msg("Skipping self-update for Bulwark service")
+		return NewSkipError("self-update skipped: update Bulwark externally with 'docker compose pull bulwark && docker compose up -d bulwark'")
+	}
+
 	e.logger.Info().
 		Str("target", target.Name).
 		Str("service", service.Name).
@@ -69,6 +77,52 @@ func (e *ComposeExecutor) UpdateService(ctx context.Context, target *state.Targe
 		Msg("Service recreated successfully")
 
 	return nil
+}
+
+func (e *ComposeExecutor) shouldSkipSelfUpdate(ctx context.Context, target *state.Target, service *state.Service) bool {
+	if target == nil || service == nil {
+		return false
+	}
+
+	if allowSelfUpdate(os.Getenv("BULWARK_ALLOW_SELF_UPDATE")) {
+		return false
+	}
+
+	if e.dockerClient == nil {
+		return false
+	}
+
+	selfContainerID := strings.TrimSpace(os.Getenv("HOSTNAME"))
+	if selfContainerID == "" {
+		return false
+	}
+
+	inspect, err := e.dockerClient.InspectContainer(ctx, selfContainerID)
+	if err != nil || inspect.Config == nil {
+		return false
+	}
+
+	labels := inspect.Config.Labels
+	if labels == nil {
+		return false
+	}
+
+	selfProject := labels["com.docker.compose.project"]
+	selfService := labels["com.docker.compose.service"]
+
+	return isSameComposeService(target.Name, service.Name, selfProject, selfService)
+}
+
+func isSameComposeService(targetProject, targetService, selfProject, selfService string) bool {
+	if targetProject == "" || targetService == "" || selfProject == "" || selfService == "" {
+		return false
+	}
+	return targetProject == selfProject && targetService == selfService
+}
+
+func allowSelfUpdate(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	return value == "1" || value == "true" || value == "yes"
 }
 
 // GetNewDigest gets the digest of the currently running container after update

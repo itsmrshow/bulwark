@@ -16,7 +16,7 @@ services:
     - host.docker.internal:host-gateway
     labels:
     - bulwark.enabled=true
-    - bulwark.policy=safe
+    - bulwark.policy=notify
     - bulwark.tier=stateless
     - bulwark.probe.type=stability
     - bulwark.probe.stability_sec=15
