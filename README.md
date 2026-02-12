@@ -46,6 +46,18 @@ docker compose up -d bulwark
 
 Visit `http://localhost:8085` to access the Web Console (default compose port).
 
+### Updating Bulwark Itself
+
+Use a manual/externally-triggered update flow for the Bulwark service:
+
+```bash
+docker compose pull bulwark
+docker compose up -d bulwark
+```
+
+By default, Bulwark now skips self-updates during `apply` to avoid recreating the process that is currently orchestrating updates.
+Set `BULWARK_ALLOW_SELF_UPDATE=true` only if you intentionally want Bulwark to attempt self-updates.
+
 ### Docker (single container)
 
 ```bash
