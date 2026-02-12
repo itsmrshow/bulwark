@@ -13,6 +13,9 @@
   <a href="https://hub.docker.com/r/itsmrshow/bulwark">
     <img src="https://img.shields.io/docker/pulls/itsmrshow/bulwark" alt="Docker Hub Pulls" />
   </a>
+  <a href="https://github.com/itsmrshow/bulwark">
+    <img src="https://visitor-badge.laobi.icu/badge?page_id=itsmrshow.bulwark" alt="Visitors" />
+  </a>
 </p>
 
 Bulwark is a Docker container update management tool designed for safety, transparency, and control. Unlike aggressive auto-updaters, Bulwark provides:
