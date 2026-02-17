@@ -22,6 +22,8 @@ type Config struct {
 	WriteRateRPS   float64
 	WriteRateBurst int
 	PlanCacheTTL   time.Duration
+	LockTimeout    time.Duration
+	MetricsEnabled bool
 }
 
 // LoadConfig loads configuration from environment variables.
@@ -38,6 +40,8 @@ func LoadConfig() Config {
 		WriteRateRPS:   getEnvFloat("BULWARK_WEB_WRITE_RPS", 1.0),
 		WriteRateBurst: getEnvInt("BULWARK_WEB_WRITE_BURST", 3),
 		PlanCacheTTL:   getEnvDuration("BULWARK_PLAN_CACHE_TTL", 15*time.Second),
+		LockTimeout:    getEnvDuration("BULWARK_LOCK_TIMEOUT", 5*time.Minute),
+		MetricsEnabled: getEnvBool("BULWARK_METRICS_ENABLED", false),
 	}
 }
 
