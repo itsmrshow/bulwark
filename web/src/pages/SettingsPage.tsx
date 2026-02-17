@@ -4,6 +4,7 @@ import { Button } from "../components/ui/button";
 import { useHealth, useSettings, useTestNotification, useUpdateSettings } from "../lib/queries";
 import type { NotificationSettings } from "../lib/types";
 import { Input } from "../components/ui/input";
+import { useToast } from "../components/Toast";
 
 export function SettingsPage() {
   const { data: health } = useHealth();
@@ -11,8 +12,7 @@ export function SettingsPage() {
   const locked = settingsData?.locked;
   const updateSettings = useUpdateSettings();
   const testNotification = useTestNotification();
-  const [notificationError, setNotificationError] = useState("");
-  const [notificationSuccess, setNotificationSuccess] = useState("");
+  const { toast } = useToast();
   const [form, setForm] = useState<NotificationSettings>({
     discord_webhook: "",
     slack_webhook: "",
@@ -40,24 +40,20 @@ export function SettingsPage() {
   }, [settingsData]);
 
   const handleSaveNotifications = async () => {
-    setNotificationError("");
-    setNotificationSuccess("");
     try {
       await updateSettings.mutateAsync({ notifications: form });
-      setNotificationSuccess("Notification settings saved");
+      toast("Settings saved", "success");
     } catch (err) {
-      setNotificationError(String(err));
+      toast(String(err), "error");
     }
   };
 
   const handleTestNotification = async () => {
-    setNotificationError("");
-    setNotificationSuccess("");
     try {
       await testNotification.mutateAsync();
-      setNotificationSuccess("Test notification sent");
+      toast("Test notification sent", "success");
     } catch (err) {
-      setNotificationError(String(err));
+      toast(String(err), "error");
     }
   };
 
@@ -245,18 +241,6 @@ export function SettingsPage() {
               <span className="text-xs text-amber-200">Read-only mode enabled</span>
             )}
           </div>
-
-          {notificationError && (
-            <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 p-3">
-              <div className="text-sm text-rose-200">{notificationError}</div>
-            </div>
-          )}
-
-          {notificationSuccess && (
-            <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-3">
-              <div className="text-sm text-emerald-200">{notificationSuccess}</div>
-            </div>
-          )}
         </div>
       </Card>
 

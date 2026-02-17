@@ -10,6 +10,7 @@ import {
 import { useEffect } from "react";
 import { useHealth } from "./lib/queries";
 import { apiFetch } from "./lib/api";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ReadOnlyBanner } from "./components/ReadOnlyBanner";
 import { TokenManager } from "./components/TokenManager";
 import { OverviewPage } from "./pages/OverviewPage";
@@ -120,14 +121,16 @@ export default function App() {
 
           <div className="px-6 py-6">
             <ReadOnlyBanner readOnly={health?.read_only ?? true} />
-            <Routes>
-              <Route path="/" element={<OverviewPage />} />
-              <Route path="/targets" element={<TargetsPage />} />
-              <Route path="/plan" element={<PlanPage readOnly={health?.read_only ?? true} />} />
-              <Route path="/apply" element={<ApplyPage />} />
-              <Route path="/history" element={<HistoryPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Routes>
+            <ErrorBoundary>
+              <Routes>
+                <Route path="/" element={<OverviewPage />} />
+                <Route path="/targets" element={<TargetsPage />} />
+                <Route path="/plan" element={<PlanPage readOnly={health?.read_only ?? true} />} />
+                <Route path="/apply" element={<ApplyPage />} />
+                <Route path="/history" element={<HistoryPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+              </Routes>
+            </ErrorBoundary>
           </div>
         </main>
       </div>

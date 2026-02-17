@@ -7,7 +7,10 @@ import { Card, CardHeader, CardTitle, CardDescription } from "../components/ui/c
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../components/ui/dialog";
+import { Skeleton } from "../components/ui/skeleton";
+import { EmptyState } from "../components/EmptyState";
 import { RiskBadge } from "../components/RiskBadge";
+import { useToast } from "../components/Toast";
 
 function groupPlan(items: PlanItem[]) {
   return items.filter((item) => item.update_available);
@@ -17,6 +20,7 @@ export function PlanPage({ readOnly }: { readOnly: boolean }) {
   const { data: plan, isLoading, error } = usePlan();
   const applyMutation = useApply();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmMode, setConfirmMode] = useState<"safe" | "selected" | null>(null);
   const [confirmText, setConfirmText] = useState("");
@@ -37,10 +41,8 @@ export function PlanPage({ readOnly }: { readOnly: boolean }) {
 
   const toggleSelectAll = () => {
     if (selected.size === updates.length) {
-      // If all selected, deselect all
       setSelected(new Set());
     } else {
-      // Otherwise, select all
       setSelected(new Set(updates.map(item => item.service_id)));
     }
   };
@@ -50,14 +52,45 @@ export function PlanPage({ readOnly }: { readOnly: boolean }) {
     if (mode === "selected") {
       payload.service_ids = Array.from(selected);
     }
-    const response = await applyMutation.mutateAsync(payload);
-    navigate(`/apply?run=${response.run_id}`);
+    try {
+      const response = await applyMutation.mutateAsync(payload);
+      toast("Apply run started", "info");
+      navigate(`/apply?run=${response.run_id}`);
+    } catch {
+      toast("Failed to start apply run", "error");
+    }
   };
 
   const canApplySelected = selected.size > 0;
 
   if (isLoading) {
-    return <div className="text-ink-300">Building plan...</div>;
+    return (
+      <div className="space-y-6">
+        <Card className="border-ember-500/40 bg-ember-500/10">
+          <CardHeader>
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-3 w-72" />
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-3 w-56" />
+          </CardHeader>
+          <div className="divide-y divide-ink-800/60">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-center justify-between py-4">
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-48" />
+                  <Skeleton className="h-3 w-64" />
+                </div>
+                <Skeleton className="h-6 w-20 rounded-full" />
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    );
   }
 
   if (error || !plan) {
@@ -134,7 +167,11 @@ export function PlanPage({ readOnly }: { readOnly: boolean }) {
         )}
         <div className="divide-y divide-ink-800/60">
           {updates.length === 0 && (
-            <div className="py-6 text-sm text-ink-400">No updates available right now.</div>
+            <EmptyState
+              icon={ClipboardCheck}
+              title="All up to date"
+              description="No digest changes detected."
+            />
           )}
           {updates.map((item) => (
             <div key={item.service_id} className="flex flex-col gap-3 py-4 lg:flex-row lg:items-center lg:justify-between">
