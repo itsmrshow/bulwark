@@ -58,4 +58,3 @@ func TestAllowSelfUpdate(t *testing.T) {
 		t.Fatal("expected false to disable self-update")
 	}
 }
-
