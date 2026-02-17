@@ -40,4 +40,11 @@ type Store interface {
 	// Settings operations
 	GetSetting(ctx context.Context, key string) (string, error)
 	SetSetting(ctx context.Context, key, value string) error
+
+	// Run persistence
+	SaveRun(ctx context.Context, run *Run) error
+	GetRun(ctx context.Context, id string) (*Run, error)
+	ListRecentRuns(ctx context.Context, limit int) ([]Run, error)
+	SaveRunEvent(ctx context.Context, event *RunEvent) error
+	GetRunEvents(ctx context.Context, runID string) ([]RunEvent, error)
 }

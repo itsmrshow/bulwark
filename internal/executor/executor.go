@@ -7,6 +7,7 @@ import (
 
 	"github.com/itsmrshow/bulwark/internal/docker"
 	"github.com/itsmrshow/bulwark/internal/logging"
+	"github.com/itsmrshow/bulwark/internal/metrics"
 	"github.com/itsmrshow/bulwark/internal/policy"
 	"github.com/itsmrshow/bulwark/internal/probe"
 	"github.com/itsmrshow/bulwark/internal/state"
@@ -23,6 +24,7 @@ type Executor struct {
 	dockerClient  *docker.Client
 	logger        *logging.Logger
 	dryRun        bool
+	lockTimeout   time.Duration
 }
 
 // NewExecutor creates a new executor
@@ -38,7 +40,14 @@ func NewExecutor(dockerClient *docker.Client, policyEngine *policy.Engine, store
 		dockerClient:  dockerClient,
 		logger:        logger.WithComponent("executor"),
 		dryRun:        dryRun,
+		lockTimeout:   5 * time.Minute,
 	}
+}
+
+// WithLockTimeout sets the lock acquisition timeout
+func (e *Executor) WithLockTimeout(d time.Duration) *Executor {
+	e.lockTimeout = d
+	return e
 }
 
 // ExecuteUpdate performs an update for a service
@@ -70,9 +79,8 @@ func (e *Executor) ExecuteUpdate(ctx context.Context, target *state.Target, serv
 		return result
 	}
 
-	// Acquire lock with 5-minute timeout
-	lockTimeout := 5 * time.Minute
-	if err := e.lockManager.Lock(ctx, target.ID, lockTimeout); err != nil {
+	// Acquire lock
+	if err := e.lockManager.Lock(ctx, target.ID, e.lockTimeout); err != nil {
 		result.Error = fmt.Errorf("failed to acquire lock: %w", err)
 		result.CompletedAt = time.Now()
 		return result
@@ -97,6 +105,10 @@ func (e *Executor) ExecuteUpdate(ctx context.Context, target *state.Target, serv
 			result.NewDigest = result.OldDigest
 		}
 		result.CompletedAt = time.Now()
+
+		if !IsSkipError(updateErr) {
+			metrics.UpdatesTotal.WithLabelValues(target.Name, service.Name, "failed").Inc()
+		}
 
 		if IsSkipError(updateErr) {
 			e.logger.Info().
@@ -149,6 +161,8 @@ func (e *Executor) ExecuteUpdate(ctx context.Context, target *state.Target, serv
 
 			// Check if all probes passed
 			if !probe.AllProbesPassed(probeResults) {
+				metrics.UpdatesTotal.WithLabelValues(target.Name, service.Name, "rolled_back").Inc()
+
 				e.logger.Error().
 					Str("service", service.Name).
 					Msg("Health probes failed, initiating rollback")
@@ -184,6 +198,8 @@ func (e *Executor) ExecuteUpdate(ctx context.Context, target *state.Target, serv
 	// Update successful
 	result.Success = true
 	result.CompletedAt = time.Now()
+
+	metrics.UpdatesTotal.WithLabelValues(target.Name, service.Name, "success").Inc()
 
 	e.logger.Info().
 		Str("service", service.Name).
@@ -234,6 +250,8 @@ func (e *Executor) ExecuteRollback(ctx context.Context, target *state.Target, se
 	// Update result to reflect rollback
 	result.RollbackPerformed = true
 	result.RollbackDigest = result.OldDigest
+
+	metrics.RollbacksTotal.WithLabelValues(target.Name, service.Name).Inc()
 
 	e.logger.Info().
 		Str("service", service.Name).

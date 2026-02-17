@@ -92,7 +92,7 @@ func (e *ComposeExecutor) shouldSkipSelfUpdate(ctx context.Context, target *stat
 		return false
 	}
 
-	selfContainerID := strings.TrimSpace(os.Getenv("HOSTNAME"))
+	selfContainerID := getSelfContainerID()
 	if selfContainerID == "" {
 		return false
 	}
@@ -123,6 +123,39 @@ func isSameComposeService(targetProject, targetService, selfProject, selfService
 func allowSelfUpdate(value string) bool {
 	value = strings.ToLower(strings.TrimSpace(value))
 	return value == "1" || value == "true" || value == "yes"
+}
+
+// getSelfContainerID determines the container ID of the running Bulwark instance.
+// It tries multiple strategies in order of reliability:
+// 1. BULWARK_CONTAINER_ID env var (explicit, most reliable)
+// 2. /proc/1/cpuset (works in most Docker environments)
+// 3. HOSTNAME env var (fallback, current behavior)
+func getSelfContainerID() string {
+	// Strategy 1: Explicit env var
+	if id := strings.TrimSpace(os.Getenv("BULWARK_CONTAINER_ID")); id != "" {
+		return id
+	}
+
+	// Strategy 2: Read from /proc/1/cpuset
+	if data, err := os.ReadFile("/proc/1/cpuset"); err == nil {
+		cpuset := strings.TrimSpace(string(data))
+		// cpuset looks like /docker/<container_id> or /system.slice/docker-<id>.scope
+		if parts := strings.Split(cpuset, "/"); len(parts) > 1 {
+			last := parts[len(parts)-1]
+			// Docker format: the last segment is the container ID
+			if len(last) >= 12 && last != "" {
+				// Handle systemd format: docker-<id>.scope
+				last = strings.TrimPrefix(last, "docker-")
+				last = strings.TrimSuffix(last, ".scope")
+				if len(last) >= 12 {
+					return last
+				}
+			}
+		}
+	}
+
+	// Strategy 3: HOSTNAME (traditional fallback)
+	return strings.TrimSpace(os.Getenv("HOSTNAME"))
 }
 
 // GetNewDigest gets the digest of the currently running container after update
