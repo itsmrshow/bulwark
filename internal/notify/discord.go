@@ -15,11 +15,18 @@ type DiscordNotifier struct {
 	Client     *http.Client
 }
 
-// Send sends a message to Discord.
+// Send sends a message to Discord with retry.
 func (d *DiscordNotifier) Send(ctx context.Context, message string) error {
 	if d.WebhookURL == "" {
 		return fmt.Errorf("discord webhook url missing")
 	}
+
+	return sendWithRetry(ctx, "discord", func(ctx context.Context) (int, error) {
+		return d.doSend(ctx, message)
+	})
+}
+
+func (d *DiscordNotifier) doSend(ctx context.Context, message string) (int, error) {
 	client := d.Client
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
@@ -30,18 +37,18 @@ func (d *DiscordNotifier) Send(ctx context.Context, message string) error {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.WebhookURL, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("discord webhook returned status %d", resp.StatusCode)
+		return resp.StatusCode, fmt.Errorf("discord webhook returned status %d", resp.StatusCode)
 	}
-	return nil
+	return resp.StatusCode, nil
 }
