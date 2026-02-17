@@ -468,7 +468,7 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = dockerClient.Close() }()
 
 	policyEngine := policy.NewEngine(s.logger)
-	exec := executor.NewExecutor(dockerClient, policyEngine, s.store, s.logger, false)
+	exec := executor.NewExecutor(dockerClient, policyEngine, s.store, s.logger, false).WithLockTimeout(s.cfg.LockTimeout)
 
 	// Create a fake update result to pass to rollback
 	result := &state.UpdateResult{
@@ -650,7 +650,7 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 		serviceFilter[id] = true
 	}
 
-	exec := executor.NewExecutor(dockerClient, policyEngine, s.store, logger, false)
+	exec := executor.NewExecutor(dockerClient, policyEngine, s.store, logger, false).WithLockTimeout(s.cfg.LockTimeout)
 
 	for _, item := range plan.Items {
 		if !item.UpdateAvailable {
