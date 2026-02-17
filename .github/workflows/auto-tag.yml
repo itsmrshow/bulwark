@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 env:
-  STARTING_VERSION: 1.0.1
+  STARTING_VERSION: 0.1.0
 
 jobs:
   tag:
