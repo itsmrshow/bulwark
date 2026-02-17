@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/robfig/cron/v3"
 	"github.com/itsmrshow/bulwark/internal/planner"
+	"github.com/robfig/cron/v3"
 )
 
 const (
