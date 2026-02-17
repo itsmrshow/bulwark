@@ -8,9 +8,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/itsmrshow/bulwark/internal/api"
 	"github.com/itsmrshow/bulwark/internal/logging"
+	"github.com/spf13/cobra"
 )
 
 // NewServeCommand creates the serve command

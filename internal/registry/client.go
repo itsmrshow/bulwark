@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/itsmrshow/bulwark/internal/logging"
+	"github.com/itsmrshow/bulwark/internal/metrics"
 )
 
 // Client handles registry operations
@@ -78,10 +79,16 @@ type TokenResponse struct {
 
 // FetchDigest fetches the digest for an image
 func (c *Client) FetchDigest(ctx context.Context, image string) (string, error) {
+	start := time.Now()
+
 	ref, err := ParseImageReference(image)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse image reference: %w", err)
 	}
+
+	defer func() {
+		metrics.DigestFetchDuration.WithLabelValues(ref.Registry).Observe(time.Since(start).Seconds())
+	}()
 
 	c.logger.Debug().
 		Str("registry", ref.Registry).

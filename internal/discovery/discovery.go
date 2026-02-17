@@ -3,9 +3,11 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/itsmrshow/bulwark/internal/docker"
 	"github.com/itsmrshow/bulwark/internal/logging"
+	"github.com/itsmrshow/bulwark/internal/metrics"
 	"github.com/itsmrshow/bulwark/internal/state"
 )
 
@@ -37,6 +39,11 @@ func (d *Discoverer) WithStore(store state.Store) *Discoverer {
 
 // Discover discovers all managed targets in the given base path
 func (d *Discoverer) Discover(ctx context.Context, basePath string) ([]state.Target, error) {
+	start := time.Now()
+	defer func() {
+		metrics.DiscoveryDuration.Observe(time.Since(start).Seconds())
+	}()
+
 	d.logger.Info().
 		Str("base_path", basePath).
 		Msg("Starting discovery")
@@ -70,6 +77,14 @@ func (d *Discoverer) Discover(ctx context.Context, basePath string) ([]state.Tar
 			d.logger.Warn().Err(err).Msg("Failed to persist targets to store")
 		}
 	}
+
+	// Update gauges
+	serviceCount := 0
+	for _, t := range allTargets {
+		serviceCount += len(t.Services)
+	}
+	metrics.ManagedTargets.Set(float64(len(allTargets)))
+	metrics.ManagedServices.Set(float64(serviceCount))
 
 	d.logger.Info().
 		Int("total", len(allTargets)).

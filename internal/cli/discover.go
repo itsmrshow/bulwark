@@ -7,11 +7,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/spf13/cobra"
 	"github.com/itsmrshow/bulwark/internal/discovery"
 	"github.com/itsmrshow/bulwark/internal/docker"
 	"github.com/itsmrshow/bulwark/internal/logging"
 	"github.com/itsmrshow/bulwark/internal/state"
+	"github.com/spf13/cobra"
 )
 
 // NewDiscoverCommand creates the discover command
