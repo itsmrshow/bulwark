@@ -7,6 +7,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/itsmrshow/bulwark/internal/logging"
 	"github.com/itsmrshow/bulwark/internal/notify"
 	"github.com/itsmrshow/bulwark/internal/planner"
@@ -58,7 +60,7 @@ func NewServer(cfg Config, logger *logging.Logger) (*Server, error) {
 		cfg:          cfg,
 		logger:       logger.WithComponent("api"),
 		store:        store,
-		runs:         NewRunManager(25, 1500, 200),
+		runs:         NewRunManager(25, 1500, 200, store),
 		writeLimiter: limiter,
 		planCache:    newPlanCache(cfg.PlanCacheTTL),
 		sessions:     newSessionStore(),
@@ -101,6 +103,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/runs/", s.handleRun)
 	mux.HandleFunc("/api/history", s.handleHistory)
 	mux.Handle("/api/rollback", s.requireWrite(http.HandlerFunc(s.handleRollback)))
+
+	if s.cfg.MetricsEnabled {
+		mux.Handle("/metrics", promhttp.Handler())
+	}
 
 	if s.cfg.UIEnabled {
 		mux.Handle("/", s.uiHandler())
