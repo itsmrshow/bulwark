@@ -158,6 +158,30 @@ func FromJSON(data string, v interface{}) error {
 	return json.Unmarshal([]byte(data), v)
 }
 
+// Run represents an apply or plan run (for persistence).
+type Run struct {
+	ID          string     `json:"id"`
+	Mode        string     `json:"mode"`
+	Status      string     `json:"status"`
+	CreatedAt   time.Time  `json:"created_at"`
+	StartedAt   time.Time  `json:"started_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	SummaryJSON string     `json:"summary_json,omitempty"`
+}
+
+// RunEvent represents a single event during a run (for persistence).
+type RunEvent struct {
+	ID        int64     `json:"id"`
+	RunID     string    `json:"run_id"`
+	Timestamp time.Time `json:"ts"`
+	Level     string    `json:"level"`
+	Target    string    `json:"target,omitempty"`
+	Service   string    `json:"service,omitempty"`
+	Step      string    `json:"step,omitempty"`
+	Message   string    `json:"message"`
+	DataJSON  string    `json:"data_json,omitempty"`
+}
+
 // DefaultLabels returns default label values
 func DefaultLabels() Labels {
 	return Labels{

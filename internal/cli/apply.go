@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/spf13/cobra"
 	"github.com/itsmrshow/bulwark/internal/discovery"
 	"github.com/itsmrshow/bulwark/internal/docker"
 	"github.com/itsmrshow/bulwark/internal/executor"
@@ -14,6 +13,7 @@ import (
 	"github.com/itsmrshow/bulwark/internal/policy"
 	"github.com/itsmrshow/bulwark/internal/registry"
 	"github.com/itsmrshow/bulwark/internal/state"
+	"github.com/spf13/cobra"
 )
 
 // NewApplyCommand creates the apply command

@@ -105,6 +105,34 @@ func (s *SQLiteStore) Initialize(ctx context.Context) error {
 			value TEXT NOT NULL,
 			updated_at DATETIME NOT NULL
 		);
+
+		-- Runs table
+		CREATE TABLE IF NOT EXISTS runs (
+			id TEXT PRIMARY KEY,
+			mode TEXT NOT NULL,
+			status TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			started_at DATETIME NOT NULL,
+			completed_at DATETIME,
+			summary_json TEXT
+		);
+
+		-- Run events table
+		CREATE TABLE IF NOT EXISTS run_events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			run_id TEXT NOT NULL,
+			timestamp DATETIME NOT NULL,
+			level TEXT NOT NULL,
+			target TEXT,
+			service TEXT,
+			step TEXT,
+			message TEXT NOT NULL,
+			data_json TEXT,
+			FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE CASCADE
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at);
+		CREATE INDEX IF NOT EXISTS idx_run_events_run_id ON run_events(run_id);
 	`
 
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
@@ -656,4 +684,126 @@ func (s *SQLiteStore) SetSetting(ctx context.Context, key, value string) error {
 		return fmt.Errorf("failed to set setting: %w", err)
 	}
 	return nil
+}
+
+// SaveRun saves or updates a run.
+func (s *SQLiteStore) SaveRun(ctx context.Context, run *Run) error {
+	query := `
+		INSERT INTO runs (id, mode, status, created_at, started_at, completed_at, summary_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			status = excluded.status,
+			completed_at = excluded.completed_at,
+			summary_json = excluded.summary_json
+	`
+	_, err := s.db.ExecContext(ctx, query,
+		run.ID, run.Mode, run.Status,
+		run.CreatedAt, run.StartedAt, run.CompletedAt, run.SummaryJSON,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save run: %w", err)
+	}
+	return nil
+}
+
+// GetRun retrieves a run by ID.
+func (s *SQLiteStore) GetRun(ctx context.Context, id string) (*Run, error) {
+	query := `SELECT id, mode, status, created_at, started_at, completed_at, summary_json FROM runs WHERE id = ?`
+	var run Run
+	var summaryJSON sql.NullString
+	var completedAt sql.NullTime
+	err := s.db.QueryRowContext(ctx, query, id).Scan(
+		&run.ID, &run.Mode, &run.Status,
+		&run.CreatedAt, &run.StartedAt, &completedAt, &summaryJSON,
+	)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("run not found: %s", id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get run: %w", err)
+	}
+	if completedAt.Valid {
+		run.CompletedAt = &completedAt.Time
+	}
+	if summaryJSON.Valid {
+		run.SummaryJSON = summaryJSON.String
+	}
+	return &run, nil
+}
+
+// ListRecentRuns retrieves recent runs.
+func (s *SQLiteStore) ListRecentRuns(ctx context.Context, limit int) ([]Run, error) {
+	query := `SELECT id, mode, status, created_at, started_at, completed_at, summary_json FROM runs ORDER BY created_at DESC LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list runs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var runs []Run
+	for rows.Next() {
+		var run Run
+		var summaryJSON sql.NullString
+		var completedAt sql.NullTime
+		if err := rows.Scan(&run.ID, &run.Mode, &run.Status, &run.CreatedAt, &run.StartedAt, &completedAt, &summaryJSON); err != nil {
+			return nil, fmt.Errorf("failed to scan run: %w", err)
+		}
+		if completedAt.Valid {
+			run.CompletedAt = &completedAt.Time
+		}
+		if summaryJSON.Valid {
+			run.SummaryJSON = summaryJSON.String
+		}
+		runs = append(runs, run)
+	}
+	return runs, rows.Err()
+}
+
+// SaveRunEvent saves a run event.
+func (s *SQLiteStore) SaveRunEvent(ctx context.Context, event *RunEvent) error {
+	query := `
+		INSERT INTO run_events (run_id, timestamp, level, target, service, step, message, data_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`
+	_, err := s.db.ExecContext(ctx, query,
+		event.RunID, event.Timestamp, event.Level,
+		event.Target, event.Service, event.Step, event.Message, event.DataJSON,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save run event: %w", err)
+	}
+	return nil
+}
+
+// GetRunEvents retrieves events for a run.
+func (s *SQLiteStore) GetRunEvents(ctx context.Context, runID string) ([]RunEvent, error) {
+	query := `SELECT id, run_id, timestamp, level, target, service, step, message, data_json FROM run_events WHERE run_id = ? ORDER BY id`
+	rows, err := s.db.QueryContext(ctx, query, runID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get run events: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var events []RunEvent
+	for rows.Next() {
+		var event RunEvent
+		var target, service, step, dataJSON sql.NullString
+		if err := rows.Scan(&event.ID, &event.RunID, &event.Timestamp, &event.Level, &target, &service, &step, &event.Message, &dataJSON); err != nil {
+			return nil, fmt.Errorf("failed to scan run event: %w", err)
+		}
+		if target.Valid {
+			event.Target = target.String
+		}
+		if service.Valid {
+			event.Service = service.String
+		}
+		if step.Valid {
+			event.Step = step.String
+		}
+		if dataJSON.Valid {
+			event.DataJSON = dataJSON.String
+		}
+		events = append(events, event)
+	}
+	return events, rows.Err()
 }

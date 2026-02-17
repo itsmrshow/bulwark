@@ -256,6 +256,23 @@ func (c *Client) ContainerLogs(ctx context.Context, containerID string, tail str
 	return logs, nil
 }
 
+// ContainerLogsSince gets container logs since a given time
+func (c *Client) ContainerLogsSince(ctx context.Context, containerID string, since time.Time, tail string) (io.ReadCloser, error) {
+	options := container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Since:      since.Format(time.RFC3339),
+		Tail:       tail,
+	}
+
+	logs, err := c.cli.ContainerLogs(ctx, containerID, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get logs for container %s since %s: %w", containerID, since.Format(time.RFC3339), err)
+	}
+
+	return logs, nil
+}
+
 // ListImages lists Docker images
 func (c *Client) ListImages(ctx context.Context) ([]image.Summary, error) {
 	images, err := c.cli.ImageList(ctx, types.ImageListOptions{

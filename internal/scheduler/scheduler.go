@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/robfig/cron/v3"
 	"github.com/itsmrshow/bulwark/internal/logging"
+	"github.com/robfig/cron/v3"
 )
 
 // Job represents a scheduled job
