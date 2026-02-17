@@ -2,7 +2,7 @@
   <img src=".github/assets/logo.png" width="140" alt="Bulwark logo" />
 </p>
 <h1 align="center">Bulwark</h1>
-<p align="center"><strong>Safe, policy-driven Docker container updater with digest-based change detection and rollback capability.</strong></p>
+<p align="center"><strong>Safe, policy-driven Docker container updater with digest-based change detection and rollback.</strong></p>
 <p align="center">
   <a href="https://github.com/itsmrshow/bulwark/actions/workflows/docker-publish.yml">
     <img src="https://github.com/itsmrshow/bulwark/actions/workflows/docker-publish.yml/badge.svg?branch=main" alt="GitHub Build Status" />
@@ -18,23 +18,14 @@
   </a>
 </p>
 
-Bulwark is a Docker container update management tool designed for safety, transparency, and control. Unlike aggressive auto-updaters, Bulwark provides:
+Bulwark manages Docker container updates without the chaos. It checks for new image digests, runs health probes after updating, and rolls back automatically if anything goes wrong.
 
-- **Opt-in only** - Nothing updates without explicit configuration
-- **Digest-based detection** - Reliable change detection via image digests
-- **Policy tiers** - notify (check only), safe (full probes), aggressive (minimal checks)
-- **Health gating** - Multi-tier probes: HEALTHCHECK → HTTP → TCP → Log → Stability
-- **Automatic rollback** - Reverts to previous digest on probe failure
-- **Stateful protection** - Never auto-updates databases without explicit override
-
-## Features
-
-- **Discovery**: Scans Docker Compose projects and labeled containers
-- **Update Detection**: Compares local vs remote registry digests
-- **Safe Updates**: Applies updates with health probes and rollback
-- **Notification Scheduling**: Cron-based immediate alerts or daily digests
-- **Compose-aware**: Uses `docker compose` for proper project handling
-- **Loose Container Support**: Manages standalone containers via definition labels
+- **Opt-in only** — containers need a `bulwark.enabled=true` label to be managed
+- **Digest-based** — compares actual image digests, not tags
+- **Policy tiers** — `notify` (alert only), `safe` (probes + rollback), `aggressive` (minimal checks)
+- **Health gating** — HEALTHCHECK, HTTP, TCP, log, and stability probes
+- **Auto-rollback** — reverts on probe failure, no manual intervention
+- **Stateful-aware** — databases and other stateful services are blocked by default
 
 ## Quick Start
 
@@ -42,48 +33,36 @@ Bulwark is a Docker container update management tool designed for safety, transp
 
 ```bash
 cp .env.example .env
-# Edit .env as needed (do not commit it)
+# Edit .env with your settings
 docker compose pull bulwark
 docker compose up -d bulwark
 ```
 
-Visit `http://localhost:8085` to access the Web Console (default compose port).
+The Web Console is available at `http://localhost:8085` (default compose port).
 
-### Updating Bulwark Itself
+### Updating Bulwark
 
-Use a manual/externally-triggered update flow for the Bulwark service:
+Pull and recreate — don't rely on Bulwark to update itself:
 
 ```bash
 docker compose pull bulwark
 docker compose up -d bulwark
 ```
 
-By default, Bulwark now skips self-updates during `apply` to avoid recreating the process that is currently orchestrating updates.
-Set `BULWARK_ALLOW_SELF_UPDATE=true` only if you intentionally want Bulwark to attempt self-updates.
+Bulwark skips self-updates during `apply` to avoid killing the process that's orchestrating updates. Set `BULWARK_ALLOW_SELF_UPDATE=true` to override this.
 
 ### Docker (single container)
 
 ```bash
-docker build -t bulwark:dev .
 docker run --rm -p 8080:8080 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /docker_data:/docker_data:ro \
   -e BULWARK_UI_ENABLED=true \
   -e BULWARK_UI_READONLY=true \
-  bulwark:dev
+  itsmrshow/bulwark:latest
 ```
 
-Visit `http://localhost:8080` to access the Web Console.
-
-### Build from source (preferred for development/customization)
-
-```bash
-go install github.com/itsmrshow/bulwark/cmd/bulwark@latest
-```
-
-Replace `github.com/itsmrshow/bulwark` with your actual repo path if you fork.
-
-Or build manually:
+### Build from source
 
 ```bash
 git clone https://github.com/itsmrshow/bulwark.git
@@ -91,76 +70,68 @@ cd bulwark
 make build
 ```
 
-### Basic Usage
+Or install directly:
 
 ```bash
-# Discover managed targets
-bulwark discover
-
-# Check for available updates
-bulwark check
-
-# Plan updates (dry-run)
-bulwark plan
-
-# Apply updates
-bulwark apply
-
-# Run the Web Console (API + UI)
-bulwark serve
+go install github.com/itsmrshow/bulwark/cmd/bulwark@latest
 ```
 
-## Web Console (UI)
-
-Bulwark includes a production-ready Web Console that is **read-only by default**. Write actions (apply/rollback) must be explicitly enabled and are protected by a bearer token.
-
-### Local development
+### CLI Usage
 
 ```bash
-# Terminal 1: run the API/UI server
-export BULWARK_UI_ENABLED=true
-export BULWARK_UI_READONLY=true
-bulwark serve
-
-# Terminal 2: run the frontend dev server
-cd web
-npm install
-npm run dev
+bulwark discover   # find managed targets
+bulwark check      # check for updates
+bulwark plan       # dry-run: see what would change
+bulwark apply      # apply updates
+bulwark serve      # start the web console
 ```
 
-Open `http://localhost:5173` for the Vite dev server (it proxies `/api` to `http://localhost:8080`).
+## Web Console
 
-### Enabling write actions
+The UI is **read-only by default**. Write actions (apply, rollback) require a token.
 
 ```bash
+# Enable writes
 export BULWARK_UI_READONLY=false
 export BULWARK_WEB_TOKEN="your-strong-token"
 ```
 
-Then add `Authorization: Bearer <token>` for write requests, or enter the token in the UI header.
+Add `Authorization: Bearer <token>` to write requests, or enter the token in the UI header.
 
-### Notifications (Discord / Slack)
+### Local dev setup
 
-Configure notification webhooks in **Settings** inside the Web Console. You can:
+```bash
+# Terminal 1: API server
+BULWARK_UI_ENABLED=true BULWARK_UI_READONLY=true bulwark serve
 
-- Enable Discord and/or Slack webhooks
-- Send immediate notifications when updates are found
-- Schedule a daily digest using cron expressions
+# Terminal 2: frontend dev server
+cd web && npm install && npm run dev
+```
 
-Notifications are only sent when updates are available.
+Vite dev server runs on `http://localhost:5173` and proxies `/api` to `:8080`.
 
-Environment overrides:
-- `DISCORD_WEBHOOK_URL` / `SLACK_WEBHOOK_URL` will preconfigure webhooks and lock them in the UI.
-- `BULWARK_NOTIFY_ON_FIND` enables immediate notifications without using the UI.
-- `BULWARK_NOTIFY_DIGEST` enables digest notifications without using the UI.
-- `BULWARK_NOTIFY_CHECK_CRON` / `BULWARK_NOTIFY_DIGEST_CRON` override the notification schedules.
-- Settings are persisted to `/data/bulwark.json` by default (configure with `BULWARK_DATA_DIR` or `BULWARK_CONFIG_PATH`).
+### Notifications
 
-## Label Configuration
+Discord and Slack webhooks can be configured in the Settings page. Supports immediate alerts on update discovery and scheduled digest summaries via cron.
 
-Enable Bulwark management on your containers using labels:
+Environment overrides (lock the values in the UI):
 
-### Compose Project
+| Variable | Description |
+|---|---|
+| `DISCORD_WEBHOOK_URL` | Discord webhook URL |
+| `SLACK_WEBHOOK_URL` | Slack webhook URL |
+| `BULWARK_NOTIFY_ON_FIND` | Send alert immediately when updates found |
+| `BULWARK_NOTIFY_DIGEST` | Enable digest summary |
+| `BULWARK_NOTIFY_CHECK_CRON` | Override check schedule |
+| `BULWARK_NOTIFY_DIGEST_CRON` | Override digest schedule |
+
+Settings persist to `/data/bulwark.json` (configure with `BULWARK_DATA_DIR` or `BULWARK_CONFIG_PATH`).
+
+## Labels
+
+Everything is configured through container labels.
+
+### Compose example
 
 ```yaml
 services:
@@ -175,7 +146,7 @@ services:
       - bulwark.probe.expect_status=200
 ```
 
-### Stateful Service (Protected)
+### Stateful service (protected)
 
 ```yaml
 services:
@@ -183,11 +154,11 @@ services:
     image: postgres:15
     labels:
       - bulwark.enabled=true
-      - bulwark.policy=notify  # Only notify, never auto-update
+      - bulwark.policy=notify
       - bulwark.tier=stateful
 ```
 
-### Loose Container
+### Loose container
 
 ```bash
 docker run -d \
@@ -201,107 +172,103 @@ docker run -d \
   myapp:latest
 ```
 
-## Label Reference
+### Label reference
 
-### Core Labels
+**Core:**
 
-- `bulwark.enabled=true|false` - Enable Bulwark management (required)
-- `bulwark.policy=notify|safe|aggressive` - Update policy (default: safe)
-- `bulwark.tier=stateless|stateful` - Service tier (default: stateless)
-- `bulwark.definition=compose:/abs/path/compose.yml#service=<service>` - For loose containers
+| Label | Values | Default |
+|---|---|---|
+| `bulwark.enabled` | `true`/`false` | — (required) |
+| `bulwark.policy` | `notify`, `safe`, `aggressive` | `safe` |
+| `bulwark.tier` | `stateless`, `stateful` | `stateless` |
+| `bulwark.definition` | `compose:/path/compose.yml#service=name` | — |
 
-### Probe Labels
+**Probes:**
 
-- `bulwark.probe.type=http|tcp|log|stability` - Probe type
-- `bulwark.probe.url=<url>` - HTTP probe URL
-- `bulwark.probe.expect_status=<code>` - Expected HTTP status (default: 200)
-- `bulwark.probe.tcp_host=<host>` - TCP probe host
-- `bulwark.probe.tcp_port=<port>` - TCP probe port
-- `bulwark.probe.log_pattern=<regex>` - Log pattern to match
-- `bulwark.probe.stability_sec=<seconds>` - Stability window duration
+| Label | Description |
+|---|---|
+| `bulwark.probe.type` | `http`, `tcp`, `log`, `stability` |
+| `bulwark.probe.url` | HTTP probe URL |
+| `bulwark.probe.expect_status` | Expected HTTP status (default: 200) |
+| `bulwark.probe.tcp_host` | TCP probe host |
+| `bulwark.probe.tcp_port` | TCP probe port |
+| `bulwark.probe.log_pattern` | Regex pattern to match in logs |
+| `bulwark.probe.stability_sec` | Stability window in seconds |
 
 ## Environment Variables
 
-- `BULWARK_ROOT=/docker_data` - Base path for compose discovery
-- `BULWARK_STATE_DB=/var/lib/bulwark/state.db` - State database location (SQLite)
-- `BULWARK_LOG_LEVEL=debug|info|warn|error` - Logging verbosity
+**Core:**
 
-### Web Console
+| Variable | Default | Description |
+|---|---|---|
+| `BULWARK_ROOT` | `/docker_data` | Base path for compose discovery |
+| `BULWARK_STATE_DB` | `/var/lib/bulwark/state.db` | SQLite database path |
+| `BULWARK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 
-- `BULWARK_UI_ENABLED=true|false` - Enable the Web Console (default: true)
-- `BULWARK_UI_READONLY=true|false` - Read-only mode (default: true)
-- `BULWARK_WEB_TOKEN=...` - Required bearer token for write actions
-- `BULWARK_UI_ADDR=:8080` - UI/API listen address
-- `BULWARK_UI_DIST=web/dist` - Path to built UI assets
-- `BULWARK_PLAN_CACHE_TTL=15s` - Cache TTL for overview/plan calculations
-- `BULWARK_WEB_WRITE_RPS=1` - Write endpoint rate limit (requests per second)
-- `BULWARK_WEB_WRITE_BURST=3` - Write endpoint burst capacity
+**Web Console:**
 
-## Security Considerations
+| Variable | Default | Description |
+|---|---|---|
+| `BULWARK_UI_ENABLED` | `true` | Enable the web console |
+| `BULWARK_UI_READONLY` | `true` | Read-only mode |
+| `BULWARK_WEB_TOKEN` | — | Bearer token for writes |
+| `BULWARK_UI_ADDR` | `:8080` | Listen address |
+| `BULWARK_UI_DIST` | `web/dist` | Built UI assets path |
+| `BULWARK_PLAN_CACHE_TTL` | `15s` | Plan/overview cache TTL |
+| `BULWARK_WEB_WRITE_RPS` | `1` | Write rate limit (req/s) |
+| `BULWARK_WEB_WRITE_BURST` | `3` | Write burst capacity |
 
-⚠️ **Docker Socket Access**: Bulwark requires access to `/var/run/docker.sock`, which provides full Docker daemon control. Run Bulwark in a trusted environment only.
+## Security
 
-- Web Console is read-only by default
-- Write actions require `BULWARK_WEB_TOKEN` and bearer auth
-- Keep the API on an internal network and use a reverse proxy (Traefik/HAProxy/Cloudflare Access) for additional auth
-- Stateful services (databases) protected by default
+Bulwark requires `/var/run/docker.sock` access, which gives full Docker daemon control. Keep it on a trusted network.
+
+- Web console is read-only by default
+- Writes require bearer token auth
+- Stateful services are protected from auto-updates
+- Use a reverse proxy (Traefik, Caddy, etc.) for additional auth if exposing externally
 
 ## Development
 
 ```bash
-# Install dependencies
-go mod download
-
-# Build
-make build
-
-# Run tests
-make test
-
-# Run linter
-make lint
-
-# Build Docker image
-make docker-build
+make build          # build binary
+make test           # run tests with race detection
+make lint           # golangci-lint
+make fmt            # format code
+make docker-build   # build Docker image
 ```
 
 ## Roadmap
 
-### v1.0 (Complete! 🎉)
+**Done:**
+- Discovery engine (compose projects + standalone containers)
+- Docker Hub digest checking
+- Policy engine (notify/safe/aggressive)
+- SQLite state persistence
+- Update executor with compose awareness
+- Health probes (HTTP, TCP, Docker HEALTHCHECK, stability)
+- Automatic rollback on probe failure
+- Cron-based scheduler
+- Web console with React frontend
+- REST API with async operation tracking
+- Notification system (Discord/Slack)
 
-- [x] Basic project structure
-- [x] Docker client integration (Phase 1)
-- [x] CLI framework (Phase 1)
-- [x] Discovery engine (Phase 2) - Compose + loose containers
-- [x] Registry digest checking (Phase 3) - Docker Hub
-- [x] Policy engine (Phase 3) - notify/safe/aggressive
-- [x] SQLite state persistence (Phase 5)
-- [x] Update executor (Phase 6) - Compose + container updates
-- [x] Health probes (Phase 7) - HTTP/TCP/Docker/Stability
-- [x] Automatic rollback (Phase 8) - On probe failure
-- [x] Scheduler (Phase 9) - Cron-based automation
-- [x] Web UI dashboard (Phases 1-7) - Production-ready React app
-- [x] API backend - REST API with async operations
+**Planned:**
+- Webhook receiver for Docker Hub / Harbor push events
+- Prometheus metrics endpoint
+- Grafana dashboard templates
+- Log pattern probe (regex-based health checks)
 
-### v1.1 (Planned)
-
-- [ ] Webhook server - Docker Hub/Harbor push notifications
-- [ ] Prometheus metrics endpoint
-- [ ] Grafana dashboard templates
-- [ ] Log pattern probe (regex-based health checks)
-
-### v2.0 (Future)
-
-- Private registry auth helpers and broader registry support
-- Notification integrations (email, PagerDuty, etc.)
+**Future ideas:**
+- Private registry auth and broader registry support
+- Email / PagerDuty notifications
 - Update windows (time-based restrictions)
-- Canary deployments (gradual rollouts)
-- Pre/post update hooks (custom scripts)
+- Canary deployments
+- Pre/post update hooks
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT — see [LICENSE](LICENSE) for details.
 
 ## Contributing
 
-Contributions welcome! Please see CONTRIBUTING.md for guidelines.
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
