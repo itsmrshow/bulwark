@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
-import { X } from "lucide-react";
+import { Target, X } from "lucide-react";
 import { usePlan, useTargets } from "../lib/queries";
-import type { PlanItem, Target } from "../lib/types";
+import type { PlanItem, Target as TargetType } from "../lib/types";
 import { Card, CardHeader, CardTitle, CardDescription } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
+import { Input } from "../components/ui/input";
+import { Skeleton } from "../components/ui/skeleton";
+import { EmptyState } from "../components/EmptyState";
 import { RiskBadge } from "../components/RiskBadge";
 
 function buildPlanLookup(items: PlanItem[]) {
@@ -15,23 +18,74 @@ function buildPlanLookup(items: PlanItem[]) {
 export function TargetsPage() {
   const { data: targets, isLoading } = useTargets();
   const { data: plan } = usePlan();
-  const [selected, setSelected] = useState<Target | null>(null);
+  const [selected, setSelected] = useState<TargetType | null>(null);
+  const [search, setSearch] = useState("");
 
   const planLookup = useMemo(() => buildPlanLookup(plan?.items ?? []), [plan?.items]);
 
+  const filtered = useMemo(() => {
+    if (!targets) return [];
+    if (!search.trim()) return targets;
+    const q = search.toLowerCase();
+    return targets.filter((t) => t.name.toLowerCase().includes(q));
+  }, [targets, search]);
+
   if (isLoading) {
-    return <div className="text-ink-300">Loading targets...</div>;
+    return (
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-3 w-64" />
+        </CardHeader>
+        <div className="divide-y divide-ink-800/60">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex items-center justify-between px-2 py-4">
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-3 w-64" />
+              </div>
+              <div className="flex gap-2">
+                <Skeleton className="h-6 w-16 rounded-full" />
+                <Skeleton className="h-6 w-24 rounded-full" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    );
   }
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Managed Targets</CardTitle>
-          <CardDescription>Compose projects and containers tracked by Bulwark</CardDescription>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <CardTitle>Managed Targets</CardTitle>
+              <CardDescription>Compose projects and containers tracked by Bulwark</CardDescription>
+            </div>
+            <Input
+              placeholder="Filter targets..."
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="max-w-xs"
+            />
+          </div>
         </CardHeader>
+        {filtered.length === 0 && !search && (
+          <EmptyState
+            icon={Target}
+            title="No targets discovered"
+            description="Add bulwark.enabled=true label to your containers."
+          />
+        )}
+        {filtered.length === 0 && search && (
+          <div className="px-6 pb-6 text-sm text-ink-400">
+            No targets matching &ldquo;{search}&rdquo;
+          </div>
+        )}
         <div className="divide-y divide-ink-800/60">
-          {(targets ?? []).map((target) => (
+          {filtered.map((target) => (
             <button
               key={target.id}
               className="flex w-full items-center justify-between px-2 py-4 text-left hover:bg-ink-800/40"

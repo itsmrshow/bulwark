@@ -1,4 +1,5 @@
 import { Fragment, useState } from "react";
+import { History } from "lucide-react";
 import { useHistory } from "../lib/queries";
 import type { HistoryItem } from "../lib/types";
 import { Card, CardHeader, CardTitle, CardDescription } from "../components/ui/card";
@@ -6,6 +7,9 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
+import { Skeleton } from "../components/ui/skeleton";
+import { EmptyState } from "../components/EmptyState";
+import { TimeAgo } from "../components/TimeAgo";
 
 function formatDate(value?: string) {
   if (!value) return "-";
@@ -60,8 +64,38 @@ export function HistoryPage() {
           <CardTitle>Runs</CardTitle>
           <CardDescription>Most recent 20 entries.</CardDescription>
         </CardHeader>
-        {isLoading && <div className="text-ink-300">Loading history...</div>}
-        {!isLoading && (
+        {isLoading && (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Service</TableHead>
+                <TableHead>Result</TableHead>
+                <TableHead>Duration</TableHead>
+                <TableHead>Completed</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                  <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-12" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-6 w-16" /></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        {!isLoading && (data?.items ?? []).length === 0 && (
+          <EmptyState
+            icon={History}
+            title="No update history"
+            description="History appears after your first apply run."
+          />
+        )}
+        {!isLoading && (data?.items ?? []).length > 0 && (
           <Table>
             <TableHeader>
               <TableRow>
@@ -82,7 +116,13 @@ export function HistoryPage() {
                     </TableCell>
                     <TableCell>{resultBadge(item)}</TableCell>
                     <TableCell>{item.duration_sec.toFixed(1)}s</TableCell>
-                    <TableCell>{formatDate(item.completed_at)}</TableCell>
+                    <TableCell>
+                      {item.completed_at ? (
+                        <TimeAgo date={item.completed_at} />
+                      ) : (
+                        "-"
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Button
                         variant="ghost"

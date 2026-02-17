@@ -1,18 +1,39 @@
 import { useOverview } from "../lib/queries";
 import { Card, CardHeader, CardTitle, CardDescription } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
-
-function formatDate(value?: string) {
-  if (!value) return "Never";
-  const date = new Date(value);
-  return date.toLocaleString();
-}
+import { Skeleton } from "../components/ui/skeleton";
+import { TimeAgo } from "../components/TimeAgo";
 
 export function OverviewPage() {
   const { data, isLoading, error } = useOverview();
 
   if (isLoading) {
-    return <div className="text-ink-300">Loading overview...</div>;
+    return (
+      <div className="space-y-6">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i}>
+              <CardHeader>
+                <Skeleton className="h-4 w-32" />
+              </CardHeader>
+              <Skeleton className="h-10 w-20" />
+              <Skeleton className="mt-2 h-3 w-40" />
+            </Card>
+          ))}
+        </div>
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-5 w-36" />
+            <Skeleton className="h-3 w-28" />
+          </CardHeader>
+          <div className="space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </div>
+        </Card>
+      </div>
+    );
   }
 
   if (error || !data) {
@@ -41,7 +62,11 @@ export function OverviewPage() {
             <CardTitle>Last Run</CardTitle>
           </CardHeader>
           <div className="text-lg text-ink-100">
-            {data.last_run ? formatDate(data.last_run.completed_at) : "No recent runs"}
+            {data.last_run ? (
+              <TimeAgo date={data.last_run.completed_at} />
+            ) : (
+              "No recent runs"
+            )}
           </div>
           <CardDescription>
             {data.last_run ? (
@@ -83,7 +108,7 @@ export function OverviewPage() {
                   {event.target ?? ""} {event.service ? `/${event.service}` : ""}
                 </div>
               </div>
-              <div className="text-xs text-ink-400">{formatDate(event.ts)}</div>
+              <TimeAgo date={event.ts} className="shrink-0 text-xs text-ink-400" />
             </div>
           ))}
         </div>
