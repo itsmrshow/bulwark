@@ -1,14 +1,13 @@
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
+import { PlayCircle } from "lucide-react";
 import { useRun } from "../lib/queries";
 import { Card, CardHeader, CardTitle, CardDescription } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
+import { Skeleton } from "../components/ui/skeleton";
+import { EmptyState } from "../components/EmptyState";
 import { StatusPill } from "../components/StatusPill";
-
-function formatDate(value?: string) {
-  if (!value) return "-";
-  return new Date(value).toLocaleString();
-}
+import { TimeAgo } from "../components/TimeAgo";
 
 export function ApplyPage() {
   const [params] = useSearchParams();
@@ -20,16 +19,42 @@ export function ApplyPage() {
   if (!runId) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle>No active run</CardTitle>
-          <CardDescription>Start an apply from the Plan page to watch it here.</CardDescription>
-        </CardHeader>
+        <EmptyState
+          icon={PlayCircle}
+          title="No active run"
+          description="Start an apply from the Plan page to watch it here."
+        />
       </Card>
     );
   }
 
   if (!run) {
-    return <div className="text-ink-300">Loading run...</div>;
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-48" />
+            <Skeleton className="h-3 w-64" />
+          </CardHeader>
+          <div className="flex flex-wrap gap-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-6 w-24 rounded-full" />
+            ))}
+          </div>
+        </Card>
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-5 w-28" />
+            <Skeleton className="h-3 w-56" />
+          </CardHeader>
+          <div className="space-y-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-20 w-full rounded-lg" />
+            ))}
+          </div>
+        </Card>
+      </div>
+    );
   }
 
   return (
@@ -40,7 +65,8 @@ export function ApplyPage() {
             Apply Run {run.id} <StatusPill status={run.status} />
           </CardTitle>
           <CardDescription>
-            Started {formatDate(run.started_at)} · Completed {formatDate(run.completed_at)}
+            Started <TimeAgo date={run.started_at} /> · Completed{" "}
+            {run.completed_at ? <TimeAgo date={run.completed_at} /> : "-"}
           </CardDescription>
         </CardHeader>
         <div className="flex flex-wrap gap-3 text-sm text-ink-200">
@@ -61,7 +87,7 @@ export function ApplyPage() {
             <div key={`${event.ts}-${index}`} className="rounded-lg border border-ink-800/60 bg-ink-900/60 p-3">
               <div className="flex items-center justify-between text-xs text-ink-400">
                 <span>{event.step ?? "event"}</span>
-                <span>{formatDate(event.ts)}</span>
+                <TimeAgo date={event.ts} className="text-xs text-ink-400" />
               </div>
               <div className="mt-2 text-sm text-ink-100">
                 {event.message}
