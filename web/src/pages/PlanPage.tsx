@@ -16,6 +16,11 @@ function groupPlan(items: PlanItem[]) {
   return items.filter((item) => item.update_available);
 }
 
+function formatDigest(digest: string): string {
+  const bare = digest.startsWith("sha256:") ? digest.slice(7) : digest;
+  return bare.slice(0, 12) || "unknown";
+}
+
 export function PlanPage({ readOnly }: { readOnly: boolean }) {
   const { data: plan, isLoading, error } = usePlan();
   const applyMutation = useApply();
@@ -192,10 +197,21 @@ export function PlanPage({ readOnly }: { readOnly: boolean }) {
                 </div>
                 <div className="mt-2 text-xs text-ink-400">{item.reason}</div>
               </div>
-              <div className="flex items-center gap-3 text-xs text-ink-300">
-                <span>{item.policy}</span>
-                <span>{item.tier}</span>
-                <span className="truncate">{item.image}</span>
+              <div className="flex flex-col gap-1 text-xs text-ink-300">
+                <div className="flex items-center gap-3">
+                  <span>{item.policy}</span>
+                  <span>{item.tier}</span>
+                  <span className="truncate">{item.image}</span>
+                </div>
+                <div className="flex items-center gap-1 font-mono">
+                  <span className="rounded bg-ink-800 px-1.5 py-0.5 text-ink-400">
+                    {item.current_digest ? formatDigest(item.current_digest) : "no digest"}
+                  </span>
+                  <span className="text-ink-600">→</span>
+                  <span className="rounded bg-ink-800 px-1.5 py-0.5 text-signal-400">
+                    {formatDigest(item.remote_digest)}
+                  </span>
+                </div>
               </div>
             </div>
           ))}

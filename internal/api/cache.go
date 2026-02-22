@@ -16,7 +16,7 @@ type planCache struct {
 
 func newPlanCache(ttl time.Duration) *planCache {
 	if ttl <= 0 {
-		ttl = 15 * time.Second
+		ttl = 60 * time.Second
 	}
 	return &planCache{ttl: ttl}
 }

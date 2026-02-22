@@ -11,6 +11,7 @@ import (
 	"github.com/itsmrshow/bulwark/internal/logging"
 	"github.com/itsmrshow/bulwark/internal/planner"
 	"github.com/itsmrshow/bulwark/internal/scheduler"
+	"github.com/itsmrshow/bulwark/internal/state"
 )
 
 type PlanFunc func(ctx context.Context) (*planner.Plan, error)
@@ -254,8 +255,8 @@ func (m *Manager) run(ctx context.Context, mode string) error {
 		}
 	}
 
-	message := formatMessage(mode, updates, plan)
-	return m.send(ctx, settings, message)
+	embed := formatDiscoveryEmbed(mode, updates, plan)
+	return m.sendDiscordEmbed(ctx, settings, embed)
 }
 
 func (m *Manager) send(ctx context.Context, settings Settings, message string) error {
@@ -281,31 +282,146 @@ func (m *Manager) send(ctx context.Context, settings Settings, message string) e
 	return nil
 }
 
-func formatMessage(mode string, updates []planner.PlanItem, plan *planner.Plan) string {
-	var b strings.Builder
-	if mode == "digest" {
-		b.WriteString("Bulwark daily update digest")
-	} else {
-		b.WriteString("Bulwark detected new image updates")
+// sendDiscordEmbed sends a rich embed via Discord and falls back to plain text for Slack.
+func (m *Manager) sendDiscordEmbed(ctx context.Context, settings Settings, embed discordEmbed) error {
+	var errs []string
+
+	if settings.DiscordEnabled {
+		discord := DiscordNotifier{WebhookURL: settings.DiscordWebhook}
+		if err := discord.sendEmbed(ctx, embed); err != nil {
+			errs = append(errs, fmt.Sprintf("discord: %v", err))
+		}
 	}
-	b.WriteString(fmt.Sprintf(" (%d updates)", len(updates)))
-	b.WriteString("\n")
+
+	if settings.SlackEnabled {
+		// Slack does not support Discord embed format; format as plain text.
+		text := embedToText(embed)
+		slack := SlackNotifier{WebhookURL: settings.SlackWebhook}
+		if err := slack.Send(ctx, text); err != nil {
+			errs = append(errs, fmt.Sprintf("slack: %v", err))
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("%s", strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+// NotifyResult sends a per-update result notification after an update completes.
+func (m *Manager) NotifyResult(ctx context.Context, result *state.UpdateResult, image string) {
+	settings := m.Settings()
+	if !settings.DiscordEnabled && !settings.SlackEnabled {
+		return
+	}
+
+	var title string
+	var color int
+	switch {
+	case result.RollbackPerformed:
+		title = "⚠️ Update Rolled Back"
+		color = 0xFEE75C
+	case result.Success:
+		title = "✅ Updated"
+		color = 0x57F287
+	default:
+		title = "❌ Update Failed"
+		color = 0xED4245
+	}
+
+	oldDigest := shortDigest(result.OldDigest)
+	newDigest := shortDigest(result.NewDigest)
+	duration := result.CompletedAt.Sub(result.StartedAt).Round(time.Millisecond).String()
+
+	embed := discordEmbed{
+		Title: title,
+		Color: color,
+		Fields: []discordEmbedField{
+			{Name: "Container", Value: result.ServiceName, Inline: true},
+			{Name: "Image", Value: image, Inline: true},
+			{Name: "Old Digest", Value: "`" + oldDigest + "`", Inline: true},
+			{Name: "New Digest", Value: "`" + newDigest + "`", Inline: true},
+			{Name: "Duration", Value: duration, Inline: true},
+		},
+		Footer:    &discordEmbedFooter{Text: "Bulwark"},
+		Timestamp: result.CompletedAt.UTC().Format(time.RFC3339),
+	}
+
+	if err := m.sendDiscordEmbed(ctx, settings, embed); err != nil {
+		m.logger.Warn().Err(err).Msg("failed to send result notification")
+	}
+}
+
+func formatDiscoveryEmbed(mode string, updates []planner.PlanItem, plan *planner.Plan) discordEmbed {
+	title := "🔄 Updates Available"
+	if mode == "digest" {
+		title = "📋 Daily Digest"
+	}
 
 	limit := len(updates)
 	if limit > 20 {
 		limit = 20
 	}
 
+	fields := make([]discordEmbedField, 0, limit)
 	for i := 0; i < limit; i++ {
 		item := updates[i]
-		b.WriteString(fmt.Sprintf("- %s/%s (%s)\n", item.TargetName, item.ServiceName, item.Image))
+		cur := shortDigest(item.CurrentDigest)
+		rem := shortDigest(item.RemoteDigest)
+		value := fmt.Sprintf("%s\n`%s` → `%s`", item.Image, cur, rem)
+		fields = append(fields, discordEmbedField{
+			Name:  fmt.Sprintf("%s/%s", item.TargetName, item.ServiceName),
+			Value: value,
+		})
 	}
 
 	if len(updates) > limit {
-		b.WriteString(fmt.Sprintf("...and %d more\n", len(updates)-limit))
+		fields = append(fields, discordEmbedField{
+			Name:  "…",
+			Value: fmt.Sprintf("and %d more", len(updates)-limit),
+		})
 	}
 
-	b.WriteString(fmt.Sprintf("\nGenerated at %s", plan.GeneratedAt.Format(time.RFC3339)))
+	return discordEmbed{
+		Title:       title,
+		Description: fmt.Sprintf("%d image update(s) detected", len(updates)),
+		Color:       0xF4A22C,
+		Fields:      fields,
+		Footer:      &discordEmbedFooter{Text: "Bulwark"},
+		Timestamp:   plan.GeneratedAt.UTC().Format(time.RFC3339),
+	}
+}
+
+func shortDigest(digest string) string {
+	bare := digest
+	if strings.HasPrefix(bare, "sha256:") {
+		bare = bare[7:]
+	}
+	if len(bare) > 12 {
+		bare = bare[:12]
+	}
+	if bare == "" {
+		return "none"
+	}
+	return bare
+}
+
+func embedToText(embed discordEmbed) string {
+	var b strings.Builder
+	if embed.Title != "" {
+		b.WriteString(embed.Title)
+		b.WriteString("\n")
+	}
+	if embed.Description != "" {
+		b.WriteString(embed.Description)
+		b.WriteString("\n")
+	}
+	for _, f := range embed.Fields {
+		b.WriteString(fmt.Sprintf("• %s: %s\n", f.Name, f.Value))
+	}
+	if embed.Timestamp != "" {
+		b.WriteString(fmt.Sprintf("\n%s", embed.Timestamp))
+	}
 	return b.String()
 }
 

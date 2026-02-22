@@ -23,7 +23,7 @@ export function useOverview() {
   return useQuery({
     queryKey: ["overview"],
     queryFn: () => apiFetch<OverviewResponse>("/api/overview"),
-    refetchInterval: 20000
+    refetchInterval: 60000
   });
 }
 
@@ -49,7 +49,7 @@ export function usePlan() {
   return useQuery({
     queryKey: ["plan"],
     queryFn: () => apiFetch<Plan>("/api/plan", { method: "POST", body: JSON.stringify({}) }),
-    refetchInterval: 15000
+    refetchInterval: 60000
   });
 }
 

@@ -686,6 +686,8 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 
 		result := exec.ExecuteUpdate(ctx, item.Target, item.Service, item.RemoteDigest)
 
+		go s.notify.NotifyResult(context.Background(), result, item.Image)
+
 		if result.Success {
 			summary.UpdatesApplied++
 			s.runs.AddEvent(runID, RunEvent{Level: "info", Target: item.TargetName, Service: item.ServiceName, Step: "complete", Message: "Update applied"})

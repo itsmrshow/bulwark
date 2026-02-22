@@ -9,8 +9,8 @@ import (
 
 func TestPlanCache_DefaultTTL(t *testing.T) {
 	c := newPlanCache(0)
-	if c.ttl != 15*time.Second {
-		t.Errorf("expected default TTL 15s, got %v", c.ttl)
+	if c.ttl != 60*time.Second {
+		t.Errorf("expected default TTL 60s, got %v", c.ttl)
 	}
 }
 

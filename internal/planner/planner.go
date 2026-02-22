@@ -3,6 +3,7 @@ package planner
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/itsmrshow/bulwark/internal/logging"
@@ -112,6 +113,12 @@ func (p *Planner) BuildPlan(ctx context.Context, opts PlanOptions) (*Plan, error
 		Items:       []PlanItem{},
 	}
 
+	// Collect all enabled services first so we can fetch digests in parallel.
+	type serviceRef struct {
+		target  *state.Target
+		service *state.Service
+	}
+	var refs []serviceRef
 	for i := range targets {
 		target := &targets[i]
 		for j := range target.Services {
@@ -119,69 +126,98 @@ func (p *Planner) BuildPlan(ctx context.Context, opts PlanOptions) (*Plan, error
 			if !service.Labels.Enabled && !opts.IncludeDisabled {
 				continue
 			}
-			plan.ServiceCount++
-
-			item := PlanItem{
-				TargetID:      target.ID,
-				TargetName:    target.Name,
-				TargetType:    target.Type,
-				ServiceID:     service.ID,
-				ServiceName:   service.Name,
-				Image:         service.Image,
-				CurrentDigest: service.CurrentDigest,
-				Policy:        service.Labels.Policy,
-				Tier:          service.Labels.Tier,
-				Probe:         service.Labels.Probe,
-				Target:        target,
-				Service:       service,
-			}
-
-			item.Risk = riskFromLabels(service.Labels)
-
-			remoteDigest, digestErr := p.registry.FetchDigest(ctx, service.Image)
-			if digestErr != nil {
-				item.UpdateAvailable = false
-				item.Allowed = false
-				item.Reason = fmt.Sprintf("Failed to fetch digest: %v", digestErr)
-				item.Warnings = p.policyEngine.ValidateProbeConfiguration(service.Labels)
-				plan.Items = append(plan.Items, item)
-				continue
-			}
-
-			item.RemoteDigest = remoteDigest
-
-			updateAvailable := false
-			reason := ""
-			if service.CurrentDigest == "" {
-				updateAvailable = true
-				reason = "No current digest (container not running)"
-			} else if registry.CompareDigests(service.CurrentDigest, remoteDigest) {
-				updateAvailable = true
-				reason = "Digest mismatch - update available"
-			} else {
-				updateAvailable = false
-				reason = "Digests match - up to date"
-			}
-
-			decision := p.policyEngine.Evaluate(ctx, target, service, updateAvailable)
-			item.UpdateAvailable = updateAvailable
-			item.Allowed = decision.Allowed
-			if updateAvailable {
-				item.Reason = decision.Reason
-			} else {
-				item.Reason = reason
-			}
-			item.Warnings = p.policyEngine.ValidateProbeConfiguration(service.Labels)
-
-			if item.UpdateAvailable {
-				plan.UpdateCount++
-				if item.Allowed {
-					plan.AllowedCount++
-				}
-			}
-
-			plan.Items = append(plan.Items, item)
+			refs = append(refs, serviceRef{target: target, service: service})
 		}
+	}
+	plan.ServiceCount = len(refs)
+
+	// Fetch all remote digests concurrently with a bounded pool (max 10).
+	type digestResult struct {
+		digest string
+		err    error
+	}
+	digests := make([]digestResult, len(refs))
+
+	const maxConcurrent = 10
+	sem := make(chan struct{}, maxConcurrent)
+	var wg sync.WaitGroup
+	for i, ref := range refs {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(idx int, image string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			d, err := p.registry.FetchDigest(ctx, image)
+			digests[idx] = digestResult{digest: d, err: err}
+		}(i, ref.service.Image)
+	}
+	wg.Wait()
+
+	// Build plan items using fetched digests.
+	for i, ref := range refs {
+		target := ref.target
+		service := ref.service
+
+		item := PlanItem{
+			TargetID:      target.ID,
+			TargetName:    target.Name,
+			TargetType:    target.Type,
+			ServiceID:     service.ID,
+			ServiceName:   service.Name,
+			Image:         service.Image,
+			CurrentDigest: service.CurrentDigest,
+			Policy:        service.Labels.Policy,
+			Tier:          service.Labels.Tier,
+			Probe:         service.Labels.Probe,
+			Target:        target,
+			Service:       service,
+		}
+
+		item.Risk = riskFromLabels(service.Labels)
+
+		if digests[i].err != nil {
+			item.UpdateAvailable = false
+			item.Allowed = false
+			item.Reason = fmt.Sprintf("Failed to fetch digest: %v", digests[i].err)
+			item.Warnings = p.policyEngine.ValidateProbeConfiguration(service.Labels)
+			plan.Items = append(plan.Items, item)
+			continue
+		}
+
+		remoteDigest := digests[i].digest
+		item.RemoteDigest = remoteDigest
+
+		updateAvailable := false
+		reason := ""
+		if service.CurrentDigest == "" {
+			updateAvailable = true
+			reason = "No current digest (container not running)"
+		} else if registry.CompareDigests(service.CurrentDigest, remoteDigest) {
+			updateAvailable = true
+			reason = "Digest mismatch - update available"
+		} else {
+			updateAvailable = false
+			reason = "Digests match - up to date"
+		}
+
+		decision := p.policyEngine.Evaluate(ctx, target, service, updateAvailable)
+		item.UpdateAvailable = updateAvailable
+		item.Allowed = decision.Allowed
+		if updateAvailable {
+			item.Reason = decision.Reason
+		} else {
+			item.Reason = reason
+		}
+		item.Warnings = p.policyEngine.ValidateProbeConfiguration(service.Labels)
+
+		if item.UpdateAvailable {
+			plan.UpdateCount++
+			if item.Allowed {
+				plan.AllowedCount++
+			}
+		}
+
+		plan.Items = append(plan.Items, item)
 	}
 
 	return plan, nil
