@@ -2,6 +2,7 @@ package planner
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,6 +29,22 @@ type stubRegistry struct {
 
 func (s stubRegistry) FetchDigest(ctx context.Context, image string) (string, error) {
 	return s.digest, nil
+}
+
+type countingRegistry struct {
+	mu    sync.Mutex
+	calls map[string]int
+}
+
+func (c *countingRegistry) FetchDigest(ctx context.Context, image string) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.calls == nil {
+		c.calls = make(map[string]int)
+	}
+	c.calls[image]++
+	return "sha256:new", nil
 }
 
 func TestPlannerBuildPlan(t *testing.T) {
@@ -124,5 +141,55 @@ func TestMapHistoryClampsInvalidCompletionTimes(t *testing.T) {
 		if !item.CompletedAt.Equal(item.StartedAt) {
 			t.Fatalf("expected completed_at to be clamped to started_at")
 		}
+	}
+}
+
+func TestPlannerBuildPlanDeduplicatesDigestFetchesByImage(t *testing.T) {
+	labels := state.DefaultLabels()
+	labels.Enabled = true
+	labels.Probe = state.ProbeConfig{Type: state.ProbeTypeHTTP, HTTPUrl: "http://localhost", HTTPStatus: 200}
+
+	targetID := state.GenerateTargetID(state.TargetTypeCompose, "demo", "/docker_data/demo/docker-compose.yml")
+	target := state.Target{
+		ID:   targetID,
+		Type: state.TargetTypeCompose,
+		Name: "demo",
+		Path: "/docker_data/demo/docker-compose.yml",
+		Services: []state.Service{
+			{
+				ID:            state.GenerateServiceID(targetID, "web-1"),
+				TargetID:      targetID,
+				Name:          "web-1",
+				Image:         "nginx:latest",
+				CurrentDigest: "sha256:old",
+				Labels:        labels,
+			},
+			{
+				ID:            state.GenerateServiceID(targetID, "web-2"),
+				TargetID:      targetID,
+				Name:          "web-2",
+				Image:         "nginx:latest",
+				CurrentDigest: "sha256:old",
+				Labels:        labels,
+			},
+		},
+	}
+
+	registry := &countingRegistry{}
+	plannerSvc := NewPlanner(
+		logging.Default(),
+		stubDiscoverer{targets: []state.Target{target}},
+		registry,
+		policy.NewEngine(logging.Default()),
+	)
+
+	if _, err := plannerSvc.BuildPlan(context.Background(), PlanOptions{Root: "/docker_data"}); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	if registry.calls["nginx:latest"] != 1 {
+		t.Fatalf("expected one digest fetch for nginx:latest, got %d", registry.calls["nginx:latest"])
 	}
 }

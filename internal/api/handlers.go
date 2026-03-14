@@ -540,8 +540,29 @@ func (s *Server) getPlan(ctx context.Context, req planRequest) (*planner.Plan, e
 		if cached, ok := s.planCache.Get(); ok {
 			return cached, nil
 		}
+
+		plan, err, _ := s.planGroup.Do("default", func() (interface{}, error) {
+			if cached, ok := s.planCache.Get(); ok {
+				return cached, nil
+			}
+
+			plan, err := s.buildPlan(ctx, req)
+			if err != nil {
+				return nil, err
+			}
+			s.planCache.Set(plan)
+			return plan, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		return plan.(*planner.Plan), nil
 	}
 
+	return s.buildPlan(ctx, req)
+}
+
+func (s *Server) buildPlan(ctx context.Context, req planRequest) (*planner.Plan, error) {
 	dockerClient, err := docker.NewClient()
 	if err != nil {
 		return nil, err
@@ -562,15 +583,7 @@ func (s *Server) getPlan(ctx context.Context, req planRequest) (*planner.Plan, e
 		TargetFilter:    req.Target,
 		IncludeDisabled: req.IncludeDisabled,
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	if req.Target == "" && !req.IncludeDisabled {
-		s.planCache.Set(plan)
-	}
-
-	return plan, nil
+	return plan, err
 }
 
 func (s *Server) executeApply(runID string, req applyRequest, mode string) {
@@ -826,37 +839,24 @@ func statusFromResult(result state.UpdateResult) string {
 }
 
 func (s *Server) getHistory(ctx context.Context, filters planner.HistoryFilter, page, pageSize int) ([]planner.HistoryItem, bool, error) {
-	limit := page * pageSize
-	var results []state.UpdateResult
-	var err error
-
-	switch {
-	case filters.ServiceID != "":
-		results, err = s.store.GetUpdateHistoryByService(ctx, filters.ServiceID, limit)
-	case filters.TargetID != "":
-		results, err = s.store.GetUpdateHistoryByTarget(ctx, filters.TargetID, limit)
-	default:
-		results, err = s.store.GetUpdateHistory(ctx, limit)
-	}
+	results, err := s.store.ListUpdateHistory(ctx, state.HistoryQuery{
+		TargetID:  filters.TargetID,
+		ServiceID: filters.ServiceID,
+		Result:    filters.Result,
+		Limit:     pageSize + 1,
+		Offset:    (page - 1) * pageSize,
+	})
 	if err != nil {
 		return nil, false, err
 	}
 
 	items := planner.MapHistory(results)
-	filtered := planner.FilterHistory(items, filters)
-
-	start := (page - 1) * pageSize
-	if start > len(filtered) {
-		return []planner.HistoryItem{}, false, nil
+	hasMore := len(items) > pageSize
+	if hasMore {
+		items = items[:pageSize]
 	}
 
-	end := start + pageSize
-	if end > len(filtered) {
-		end = len(filtered)
-	}
-
-	hasMore := end < len(filtered)
-	return filtered[start:end], hasMore, nil
+	return items, hasMore, nil
 }
 
 func parseIntQuery(r *http.Request, key string, defaultValue int) int {

@@ -13,6 +13,7 @@ import (
 	"github.com/itsmrshow/bulwark/internal/notify"
 	"github.com/itsmrshow/bulwark/internal/planner"
 	"github.com/itsmrshow/bulwark/internal/state"
+	"golang.org/x/sync/singleflight"
 	"golang.org/x/time/rate"
 )
 
@@ -24,6 +25,7 @@ type Server struct {
 	runs         *RunManager
 	writeLimiter *rate.Limiter
 	planCache    *planCache
+	planGroup    singleflight.Group
 	sessions     *sessionStore
 	notify       *notify.Manager
 }
@@ -69,7 +71,17 @@ func NewServer(cfg Config, logger *logging.Logger) (*Server, error) {
 	settingsStore := notify.NewStore(cfg.ConfigPath, store, logger)
 	server.notify = notify.NewManager(settingsStore, func(ctx context.Context) (*planner.Plan, error) {
 		return server.getPlan(ctx, planRequest{})
-	}, logger)
+	}, logger).WithApplyFunc(func(ctx context.Context, safe bool, unsafe bool) {
+		mode := "safe"
+		force := false
+		if unsafe {
+			mode = "all"
+			force = true
+		}
+		req := applyRequest{Mode: mode, Force: force}
+		run := server.runs.CreateRun("auto-update")
+		go server.executeApply(run.ID, req, mode)
+	})
 	server.notify.Start(context.Background())
 
 	return server, nil

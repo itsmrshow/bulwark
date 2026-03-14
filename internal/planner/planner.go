@@ -136,12 +136,21 @@ func (p *Planner) BuildPlan(ctx context.Context, opts PlanOptions) (*Plan, error
 		digest string
 		err    error
 	}
-	digests := make([]digestResult, len(refs))
+	uniqueImages := make(map[string]int, len(refs))
+	images := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if _, ok := uniqueImages[ref.service.Image]; ok {
+			continue
+		}
+		uniqueImages[ref.service.Image] = len(images)
+		images = append(images, ref.service.Image)
+	}
+	digests := make([]digestResult, len(images))
 
 	const maxConcurrent = 10
 	sem := make(chan struct{}, maxConcurrent)
 	var wg sync.WaitGroup
-	for i, ref := range refs {
+	for i, image := range images {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(idx int, image string) {
@@ -149,12 +158,12 @@ func (p *Planner) BuildPlan(ctx context.Context, opts PlanOptions) (*Plan, error
 			defer func() { <-sem }()
 			d, err := p.registry.FetchDigest(ctx, image)
 			digests[idx] = digestResult{digest: d, err: err}
-		}(i, ref.service.Image)
+		}(i, image)
 	}
 	wg.Wait()
 
 	// Build plan items using fetched digests.
-	for i, ref := range refs {
+	for _, ref := range refs {
 		target := ref.target
 		service := ref.service
 
@@ -175,16 +184,17 @@ func (p *Planner) BuildPlan(ctx context.Context, opts PlanOptions) (*Plan, error
 
 		item.Risk = riskFromLabels(service.Labels)
 
-		if digests[i].err != nil {
+		digest := digests[uniqueImages[service.Image]]
+		if digest.err != nil {
 			item.UpdateAvailable = false
 			item.Allowed = false
-			item.Reason = fmt.Sprintf("Failed to fetch digest: %v", digests[i].err)
+			item.Reason = fmt.Sprintf("Failed to fetch digest: %v", digest.err)
 			item.Warnings = p.policyEngine.ValidateProbeConfiguration(service.Labels)
 			plan.Items = append(plan.Items, item)
 			continue
 		}
 
-		remoteDigest := digests[i].digest
+		remoteDigest := digest.digest
 		item.RemoteDigest = remoteDigest
 
 		updateAvailable := false

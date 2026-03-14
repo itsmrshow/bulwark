@@ -123,6 +123,15 @@ type UpdateResult struct {
 	CompletedAt       time.Time     `json:"completed_at"`
 }
 
+// HistoryQuery defines filtered update history pagination.
+type HistoryQuery struct {
+	TargetID  string
+	ServiceID string
+	Result    string
+	Limit     int
+	Offset    int
+}
+
 // ProbeResult represents the result of a single probe
 type ProbeResult struct {
 	Type     ProbeType     `json:"type"`

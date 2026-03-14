@@ -16,11 +16,16 @@ import (
 
 type PlanFunc func(ctx context.Context) (*planner.Plan, error)
 
+// ApplyFunc triggers an automatic update run. safe and unsafe correspond to
+// which risk tiers should be updated.
+type ApplyFunc func(ctx context.Context, safe bool, unsafe bool)
+
 // Manager orchestrates notification settings and scheduled jobs.
 type Manager struct {
 	logger   *logging.Logger
 	store    Store
 	planFn   PlanFunc
+	applyFn  ApplyFunc
 	mu       sync.RWMutex
 	config   Settings
 	lastHash string
@@ -39,6 +44,12 @@ func NewManager(store Store, planFn PlanFunc, logger *logging.Logger) *Manager {
 		planFn: planFn,
 		config: Defaults(),
 	}
+}
+
+// WithApplyFunc attaches an apply function for scheduled auto-updates.
+func (m *Manager) WithApplyFunc(fn ApplyFunc) *Manager {
+	m.applyFn = fn
+	return m
 }
 
 // Load loads settings from the store if available.
@@ -132,7 +143,8 @@ func (m *Manager) restartScheduler() {
 	m.Stop()
 
 	settings := m.Settings()
-	if !settings.NotifyOnFind && !settings.DigestEnabled {
+	autoUpdateActive := settings.AutoUpdateEnabled && (settings.AutoUpdateSafe || settings.AutoUpdateUnsafe) && m.applyFn != nil
+	if !settings.NotifyOnFind && !settings.DigestEnabled && !autoUpdateActive {
 		return
 	}
 
@@ -146,6 +158,15 @@ func (m *Manager) restartScheduler() {
 	if settings.DigestEnabled {
 		if err := sched.AddJob(settings.DigestCron, &notifyJob{manager: m, mode: "digest"}); err != nil {
 			m.logger.Error().Err(err).Msg("failed to schedule digest notifications")
+		}
+	}
+	if autoUpdateActive {
+		if err := sched.AddJob(settings.AutoUpdateCron, &autoUpdateJob{
+			manager: m,
+			safe:    settings.AutoUpdateSafe,
+			unsafe:  settings.AutoUpdateUnsafe,
+		}); err != nil {
+			m.logger.Error().Err(err).Msg("failed to schedule auto-update")
 		}
 	}
 
@@ -163,7 +184,14 @@ func (m *Manager) applyEnvOverrides() {
 	digestEnabled, digestEnabledSet := readEnvBool("BULWARK_NOTIFY_DIGEST")
 	checkCron := strings.TrimSpace(os.Getenv("BULWARK_NOTIFY_CHECK_CRON"))
 	digestCron := strings.TrimSpace(os.Getenv("BULWARK_NOTIFY_DIGEST_CRON"))
-	if discord == "" && slack == "" && !notifyOnFindSet && !digestEnabledSet && checkCron == "" && digestCron == "" {
+	autoUpdateEnabled, autoUpdateEnabledSet := readEnvBool("BULWARK_AUTO_UPDATE_ENABLED")
+	autoUpdateSafe, autoUpdateSafeSet := readEnvBool("BULWARK_AUTO_UPDATE_SAFE")
+	autoUpdateUnsafe, autoUpdateUnsafeSet := readEnvBool("BULWARK_AUTO_UPDATE_UNSAFE")
+	autoUpdateCron := strings.TrimSpace(os.Getenv("BULWARK_AUTO_UPDATE_CRON"))
+
+	if discord == "" && slack == "" &&
+		!notifyOnFindSet && !digestEnabledSet && checkCron == "" && digestCron == "" &&
+		!autoUpdateEnabledSet && !autoUpdateSafeSet && !autoUpdateUnsafeSet && autoUpdateCron == "" {
 		return
 	}
 	m.mu.Lock()
@@ -184,6 +212,22 @@ func (m *Manager) applyEnvOverrides() {
 	if digestCron != "" {
 		m.config.DigestCron = digestCron
 		m.envLock.DigestCron = digestCron
+	}
+	if autoUpdateEnabledSet {
+		m.config.AutoUpdateEnabled = autoUpdateEnabled
+		m.envLock.AutoUpdateEnabled = autoUpdateEnabled
+	}
+	if autoUpdateSafeSet {
+		m.config.AutoUpdateSafe = autoUpdateSafe
+		m.envLock.AutoUpdateSafe = autoUpdateSafe
+	}
+	if autoUpdateUnsafeSet {
+		m.config.AutoUpdateUnsafe = autoUpdateUnsafe
+		m.envLock.AutoUpdateUnsafe = autoUpdateUnsafe
+	}
+	if autoUpdateCron != "" {
+		m.config.AutoUpdateCron = autoUpdateCron
+		m.envLock.AutoUpdateCron = autoUpdateCron
 	}
 
 	if discord != "" {
@@ -294,10 +338,8 @@ func (m *Manager) sendDiscordEmbed(ctx context.Context, settings Settings, embed
 	}
 
 	if settings.SlackEnabled {
-		// Slack does not support Discord embed format; format as plain text.
-		text := embedToText(embed)
 		slack := SlackNotifier{WebhookURL: settings.SlackWebhook}
-		if err := slack.Send(ctx, text); err != nil {
+		if err := slack.SendRich(ctx, embedToSlackPayload(embed)); err != nil {
 			errs = append(errs, fmt.Sprintf("slack: %v", err))
 		}
 	}
@@ -332,19 +374,40 @@ func (m *Manager) NotifyResult(ctx context.Context, result *state.UpdateResult, 
 	oldDigest := shortDigest(result.OldDigest)
 	newDigest := shortDigest(result.NewDigest)
 	duration := result.CompletedAt.Sub(result.StartedAt).Round(time.Millisecond).String()
+	probeSummary := summarizeProbeResults(result.ProbeResults)
+
+	description := fmt.Sprintf("%s finished for `%s` on `%s`.", notificationOutcomeLabel(result), image, result.TargetID)
+	if result.TargetID == "" {
+		description = fmt.Sprintf("%s finished for `%s`.", notificationOutcomeLabel(result), image)
+	}
 
 	embed := discordEmbed{
-		Title: title,
-		Color: color,
+		Title:       title,
+		Description: description,
+		Color:       color,
 		Fields: []discordEmbedField{
-			{Name: "Container", Value: result.ServiceName, Inline: true},
-			{Name: "Image", Value: image, Inline: true},
+			{Name: "Target", Value: nonEmpty(result.TargetID, "unknown"), Inline: true},
+			{Name: "Service", Value: result.ServiceName, Inline: true},
+			{Name: "Image", Value: image, Inline: false},
 			{Name: "Old Digest", Value: "`" + oldDigest + "`", Inline: true},
 			{Name: "New Digest", Value: "`" + newDigest + "`", Inline: true},
 			{Name: "Duration", Value: duration, Inline: true},
+			{Name: "Probes", Value: probeSummary, Inline: true},
 		},
 		Footer:    &discordEmbedFooter{Text: "Bulwark"},
 		Timestamp: result.CompletedAt.UTC().Format(time.RFC3339),
+	}
+	if result.RollbackPerformed {
+		embed.Fields = append(embed.Fields, discordEmbedField{
+			Name:  "Rollback",
+			Value: fmt.Sprintf("Returned to `%s`", shortDigest(result.RollbackDigest)),
+		})
+	}
+	if result.Error != nil {
+		embed.Fields = append(embed.Fields, discordEmbedField{
+			Name:  "Details",
+			Value: truncateNotificationText(result.Error.Error(), 300),
+		})
 	}
 
 	if err := m.sendDiscordEmbed(ctx, settings, embed); err != nil {
@@ -355,20 +418,38 @@ func (m *Manager) NotifyResult(ctx context.Context, result *state.UpdateResult, 
 func formatDiscoveryEmbed(mode string, updates []planner.PlanItem, plan *planner.Plan) discordEmbed {
 	title := "🔄 Updates Available"
 	if mode == "digest" {
-		title = "📋 Daily Digest"
+		title = "📋 Scheduled Digest"
 	}
 
 	limit := len(updates)
-	if limit > 20 {
-		limit = 20
+	if limit > 8 {
+		limit = 8
 	}
 
-	fields := make([]discordEmbedField, 0, limit)
+	blockedCount := 0
+	for _, item := range updates {
+		if !item.Allowed {
+			blockedCount++
+		}
+	}
+
+	fields := []discordEmbedField{
+		{Name: "Updates", Value: fmt.Sprintf("`%d`", len(updates)), Inline: true},
+		{Name: "Allowed", Value: fmt.Sprintf("`%d`", plan.AllowedCount), Inline: true},
+		{Name: "Blocked", Value: fmt.Sprintf("`%d`", blockedCount), Inline: true},
+	}
 	for i := 0; i < limit; i++ {
 		item := updates[i]
 		cur := shortDigest(item.CurrentDigest)
 		rem := shortDigest(item.RemoteDigest)
-		value := fmt.Sprintf("%s\n`%s` → `%s`", item.Image, cur, rem)
+		value := fmt.Sprintf(
+			"`%s` -> `%s`\n%s\n%s · %s",
+			cur,
+			rem,
+			item.Image,
+			notificationDecision(item),
+			truncateNotificationText(item.Reason, 96),
+		)
 		fields = append(fields, discordEmbedField{
 			Name:  fmt.Sprintf("%s/%s", item.TargetName, item.ServiceName),
 			Value: value,
@@ -384,10 +465,10 @@ func formatDiscoveryEmbed(mode string, updates []planner.PlanItem, plan *planner
 
 	return discordEmbed{
 		Title:       title,
-		Description: fmt.Sprintf("%d image update(s) detected", len(updates)),
+		Description: fmt.Sprintf("%d update(s) detected across %d target(s) and %d tracked service(s).", len(updates), plan.TargetCount, plan.ServiceCount),
 		Color:       0xF4A22C,
 		Fields:      fields,
-		Footer:      &discordEmbedFooter{Text: "Bulwark"},
+		Footer:      &discordEmbedFooter{Text: fmt.Sprintf("Bulwark • %s", mode)},
 		Timestamp:   plan.GeneratedAt.UTC().Format(time.RFC3339),
 	}
 }
@@ -425,6 +506,60 @@ func embedToText(embed discordEmbed) string {
 	return b.String()
 }
 
+func notificationDecision(item planner.PlanItem) string {
+	if item.Allowed {
+		return fmt.Sprintf("%s • allowed", item.Risk)
+	}
+	return fmt.Sprintf("%s • blocked", item.Risk)
+}
+
+func notificationOutcomeLabel(result *state.UpdateResult) string {
+	switch {
+	case result.RollbackPerformed:
+		return "Rollback"
+	case result.Success:
+		return "Update"
+	default:
+		return "Failure"
+	}
+}
+
+func summarizeProbeResults(results []state.ProbeResult) string {
+	if len(results) == 0 {
+		return "No probes"
+	}
+
+	passed := 0
+	failed := 0
+	for _, result := range results {
+		if result.Success {
+			passed++
+			continue
+		}
+		failed++
+	}
+
+	if failed == 0 {
+		return fmt.Sprintf("%d passed", passed)
+	}
+	return fmt.Sprintf("%d passed, %d failed", passed, failed)
+}
+
+func truncateNotificationText(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	if len(value) <= limit || limit <= 3 {
+		return value
+	}
+	return value[:limit-3] + "..."
+}
+
+func nonEmpty(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
 type notifyJob struct {
 	manager *Manager
 	mode    string
@@ -439,4 +574,21 @@ func (j *notifyJob) Name() string {
 
 func (j *notifyJob) Execute(ctx context.Context) error {
 	return j.manager.run(ctx, j.mode)
+}
+
+type autoUpdateJob struct {
+	manager *Manager
+	safe    bool
+	unsafe  bool
+}
+
+func (j *autoUpdateJob) Name() string { return "auto-update" }
+
+func (j *autoUpdateJob) Execute(ctx context.Context) error {
+	if j.manager.applyFn == nil {
+		return fmt.Errorf("auto-update: apply function not configured")
+	}
+	j.manager.logger.Info().Bool("safe", j.safe).Bool("unsafe", j.unsafe).Msg("auto-update triggered by scheduler")
+	j.manager.applyFn(ctx, j.safe, j.unsafe)
+	return nil
 }

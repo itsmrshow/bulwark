@@ -31,6 +31,7 @@ type Store interface {
 	GetUpdateHistory(ctx context.Context, limit int) ([]UpdateResult, error)
 	GetUpdateHistoryByTarget(ctx context.Context, targetID string, limit int) ([]UpdateResult, error)
 	GetUpdateHistoryByService(ctx context.Context, serviceID string, limit int) ([]UpdateResult, error)
+	ListUpdateHistory(ctx context.Context, query HistoryQuery) ([]UpdateResult, error)
 	GetLastSuccessfulUpdate(ctx context.Context, serviceID string) (*UpdateResult, error)
 
 	// Cleanup operations

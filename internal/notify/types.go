@@ -12,10 +12,11 @@ import (
 )
 
 const (
-	settingsKey   = "notifications.settings"
-	lastHashKey   = "notifications.last_hash"
-	defaultCheck  = "*/15 * * * *"
-	defaultDigest = "0 9 * * *"
+	settingsKey          = "notifications.settings"
+	lastHashKey          = "notifications.last_hash"
+	defaultCheck         = "*/15 * * * *"
+	defaultDigest        = "0 9 * * *"
+	defaultAutoUpdateCron = "0 3 * * *"
 )
 
 // Settings controls notification behavior.
@@ -28,6 +29,14 @@ type Settings struct {
 	DigestEnabled  bool   `json:"digest_enabled"`
 	CheckCron      string `json:"check_cron"`
 	DigestCron     string `json:"digest_cron"`
+
+	// AutoUpdateEnabled gates the entire auto-update scheduler.
+	AutoUpdateEnabled bool `json:"auto_update_enabled"`
+	// AutoUpdateSafe triggers updates for stateless, probed (risk=safe) services.
+	AutoUpdateSafe bool `json:"auto_update_safe"`
+	// AutoUpdateUnsafe extends auto-updates to stateful, policy=notify, or probe-missing services.
+	AutoUpdateUnsafe bool   `json:"auto_update_unsafe"`
+	AutoUpdateCron   string `json:"auto_update_cron"`
 }
 
 // Defaults returns default notification settings.
@@ -50,6 +59,9 @@ func (s Settings) Normalize() Settings {
 	if s.DigestCron == "" {
 		s.DigestCron = defaultDigest
 	}
+	if s.AutoUpdateCron == "" {
+		s.AutoUpdateCron = defaultAutoUpdateCron
+	}
 	return s
 }
 
@@ -69,6 +81,11 @@ func (s Settings) Validate() error {
 	if s.DigestEnabled {
 		if _, err := cron.ParseStandard(s.DigestCron); err != nil {
 			return fmt.Errorf("invalid digest cron: %w", err)
+		}
+	}
+	if s.AutoUpdateEnabled {
+		if _, err := cron.ParseStandard(s.AutoUpdateCron); err != nil {
+			return fmt.Errorf("invalid auto_update_cron: %w", err)
 		}
 	}
 	return nil

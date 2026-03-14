@@ -17,9 +17,9 @@ function buildPlanLookup(items: PlanItem[]) {
 
 export function TargetsPage() {
   const { data: targets, isLoading } = useTargets();
-  const { data: plan } = usePlan();
   const [selected, setSelected] = useState<TargetType | null>(null);
   const [search, setSearch] = useState("");
+  const { data: plan } = usePlan({ enabled: Boolean(selected), refetchInterval: false });
 
   const planLookup = useMemo(() => buildPlanLookup(plan?.items ?? []), [plan?.items]);
 

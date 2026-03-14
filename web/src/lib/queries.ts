@@ -11,6 +11,11 @@ import type {
   Target
 } from "./types";
 
+interface PlanQueryOptions {
+  enabled?: boolean;
+  refetchInterval?: number | false;
+}
+
 export function useHealth() {
   return useQuery({
     queryKey: ["health"],
@@ -45,11 +50,12 @@ export function useTarget(id?: string) {
   });
 }
 
-export function usePlan() {
+export function usePlan(options: PlanQueryOptions = {}) {
   return useQuery({
     queryKey: ["plan"],
     queryFn: () => apiFetch<Plan>("/api/plan", { method: "POST", body: JSON.stringify({}) }),
-    refetchInterval: 60000
+    enabled: options.enabled ?? true,
+    refetchInterval: options.refetchInterval ?? 60000
   });
 }
 
@@ -58,8 +64,8 @@ export function useRun(runId?: string) {
     queryKey: ["run", runId],
     queryFn: () => apiFetch<Run>(`/api/runs/${runId}`),
     enabled: Boolean(runId),
-    refetchInterval: 1000,
-    refetchIntervalInBackground: true,
+    refetchInterval: (query) => (query.state.data?.status === "running" ? 1000 : false),
+    refetchIntervalInBackground: false,
     retry: true,
     retryDelay: 1000
   });

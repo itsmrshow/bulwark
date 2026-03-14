@@ -156,6 +156,10 @@ export interface NotificationSettings {
   digest_enabled: boolean;
   check_cron: string;
   digest_cron: string;
+  auto_update_enabled: boolean;
+  auto_update_safe: boolean;
+  auto_update_unsafe: boolean;
+  auto_update_cron: string;
 }
 
 export interface SettingsResponse {

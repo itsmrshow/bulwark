@@ -30,6 +30,7 @@ func NewContainerScanner(logger *logging.Logger, dockerClient *docker.Client) *C
 // ScanContainers scans ALL running containers for bulwark labels
 func (s *ContainerScanner) ScanContainers(ctx context.Context) ([]state.Target, error) {
 	s.logger.Info().Msg("Scanning running containers for Bulwark labels")
+	digestCache := make(map[string]string)
 
 	// List all running containers
 	containers, err := s.dockerClient.ListContainers(ctx, false)
@@ -62,7 +63,7 @@ func (s *ContainerScanner) ScanContainers(ctx context.Context) ([]state.Target, 
 
 	// Process compose projects
 	for projectName, projectContainers := range composeProjects {
-		target := s.createComposeTarget(ctx, projectName, projectContainers)
+		target := s.createComposeTarget(ctx, projectName, projectContainers, digestCache)
 		if target != nil {
 			targets = append(targets, *target)
 		}
@@ -102,7 +103,7 @@ func (s *ContainerScanner) ScanContainers(ctx context.Context) ([]state.Target, 
 		}
 
 		// Create a service entry for the container
-		digest := resolveRepoDigest(ctx, s.dockerClient, container.Image, inspect.Image)
+		digest := resolveRepoDigestCached(ctx, s.dockerClient, container.Image, inspect.Image, digestCache)
 
 		service := state.Service{
 			ID:            state.GenerateServiceID(target.ID, containerName),
@@ -131,7 +132,7 @@ func (s *ContainerScanner) ScanContainers(ctx context.Context) ([]state.Target, 
 }
 
 // createComposeTarget creates a target from a group of compose containers
-func (s *ContainerScanner) createComposeTarget(ctx context.Context, projectName string, containers []docker.Container) *state.Target {
+func (s *ContainerScanner) createComposeTarget(ctx context.Context, projectName string, containers []docker.Container, digestCache map[string]string) *state.Target {
 	if len(containers) == 0 {
 		return nil
 	}
@@ -170,7 +171,7 @@ func (s *ContainerScanner) createComposeTarget(ctx context.Context, projectName 
 			continue
 		}
 
-		digest := resolveRepoDigest(ctx, s.dockerClient, container.Image, inspect.Image)
+		digest := resolveRepoDigestCached(ctx, s.dockerClient, container.Image, inspect.Image, digestCache)
 
 		service := state.Service{
 			ID:            state.GenerateServiceID(target.ID, serviceName),

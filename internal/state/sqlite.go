@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/itsmrshow/bulwark/internal/logging"
@@ -555,6 +556,44 @@ func (s *SQLiteStore) GetUpdateHistoryByService(ctx context.Context, serviceID s
 	`
 
 	return s.queryUpdateHistory(ctx, query, serviceID, limit)
+}
+
+// ListUpdateHistory retrieves paginated update history with optional filters.
+func (s *SQLiteStore) ListUpdateHistory(ctx context.Context, query HistoryQuery) ([]UpdateResult, error) {
+	var builder strings.Builder
+	builder.WriteString(`
+		SELECT id, target_id, service_id, service_name, old_digest, new_digest,
+			   success, error, probe_results_json, rollback_performed, rollback_digest,
+			   started_at, completed_at
+		FROM update_history
+	`)
+
+	args := make([]interface{}, 0, 4)
+	clauses := make([]string, 0, 3)
+	if query.ServiceID != "" {
+		clauses = append(clauses, "service_id = ?")
+		args = append(args, query.ServiceID)
+	}
+	if query.TargetID != "" {
+		clauses = append(clauses, "target_id = ?")
+		args = append(args, query.TargetID)
+	}
+	switch query.Result {
+	case "success":
+		clauses = append(clauses, "success = 1")
+	case "failed":
+		clauses = append(clauses, "success = 0")
+	case "rolled_back":
+		clauses = append(clauses, "rollback_performed = 1")
+	}
+	if len(clauses) > 0 {
+		builder.WriteString(" WHERE ")
+		builder.WriteString(strings.Join(clauses, " AND "))
+	}
+	builder.WriteString(" ORDER BY completed_at DESC LIMIT ? OFFSET ?")
+	args = append(args, query.Limit, query.Offset)
+
+	return s.queryUpdateHistory(ctx, builder.String(), args...)
 }
 
 // GetLastSuccessfulUpdate retrieves the last successful update for a service

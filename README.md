@@ -110,6 +110,28 @@ cd web && npm install && npm run dev
 
 Vite dev server runs on `http://localhost:5173` and proxies `/api` to `:8080`.
 
+### Auto Update
+
+Bulwark can automatically apply updates on a schedule — similar to Watchtower — configured from the **Settings → Auto Update** section of the web console.
+
+| Setting | Description |
+|---|---|
+| Enable automatic updates | Master switch. Activates the scheduled auto-update job. |
+| Update schedule | Cron expression (default: `0 3 * * *` — daily at 03:00). |
+| Safe containers | Updates stateless services that have health probes configured. Automatic rollback runs if any probe fails. |
+| Unsafe containers | Updates stateful, policy=notify, and probe-missing services. **No rollback protection.** A confirmation prompt is shown before this can be enabled. |
+
+When **safe only** is active, the job runs with `mode=safe` — only `risk=safe` items are touched. When **unsafe** is also enabled, `mode=all` with `force=true` is used, which bypasses policy blocks and probe requirements.
+
+Environment overrides (lock values in the UI):
+
+| Variable | Description |
+|---|---|
+| `BULWARK_AUTO_UPDATE_ENABLED` | Master enable (`true`/`false`) |
+| `BULWARK_AUTO_UPDATE_SAFE` | Enable safe-tier auto-updates |
+| `BULWARK_AUTO_UPDATE_UNSAFE` | Enable unsafe-tier auto-updates |
+| `BULWARK_AUTO_UPDATE_CRON` | Override the update schedule |
+
 ### Notifications
 
 Discord and Slack webhooks can be configured in the Settings page. Supports immediate alerts on update discovery and scheduled digest summaries via cron.
@@ -218,6 +240,15 @@ docker run -d \
 | `BULWARK_WEB_WRITE_RPS` | `1` | Write rate limit (req/s) |
 | `BULWARK_WEB_WRITE_BURST` | `3` | Write burst capacity |
 
+**Auto Update:**
+
+| Variable | Default | Description |
+|---|---|---|
+| `BULWARK_AUTO_UPDATE_ENABLED` | `false` | Enable scheduled auto-updates |
+| `BULWARK_AUTO_UPDATE_SAFE` | `false` | Update safe (stateless + probed) containers |
+| `BULWARK_AUTO_UPDATE_UNSAFE` | `false` | Update unsafe containers (stateful / notify policy / no probes) |
+| `BULWARK_AUTO_UPDATE_CRON` | `0 3 * * *` | Auto-update cron schedule |
+
 ## Security
 
 Bulwark requires `/var/run/docker.sock` access, which gives full Docker daemon control. Keep it on a trusted network.
@@ -251,6 +282,7 @@ make docker-build   # build Docker image
 - Web console with React frontend
 - REST API with async operation tracking
 - Notification system (Discord/Slack)
+- Auto-update scheduler (safe and unsafe tiers, Watchtower-style)
 
 **Planned:**
 - Webhook receiver for Docker Hub / Harbor push events

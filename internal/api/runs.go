@@ -123,8 +123,6 @@ func (m *RunManager) CreateRun(mode string) *Run {
 	}
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	m.runs[run.ID] = run
 	m.order = append(m.order, run.ID)
 	if len(m.order) > m.maxRuns {
@@ -132,6 +130,7 @@ func (m *RunManager) CreateRun(mode string) *Run {
 		delete(m.runs, oldest)
 		m.order = m.order[1:]
 	}
+	m.mu.Unlock()
 
 	// Write-through to store
 	if m.store != nil {
@@ -152,10 +151,9 @@ func (m *RunManager) CreateRun(mode string) *Run {
 // AddEvent appends an event to a run.
 func (m *RunManager) AddEvent(runID string, event RunEvent) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	run, ok := m.runs[runID]
 	if !ok {
+		m.mu.Unlock()
 		return
 	}
 	if event.Timestamp.IsZero() {
@@ -172,6 +170,7 @@ func (m *RunManager) AddEvent(runID string, event RunEvent) {
 	if len(m.recentEvents) > m.maxRecent {
 		m.recentEvents = m.recentEvents[len(m.recentEvents)-m.maxRecent:]
 	}
+	m.mu.Unlock()
 
 	// Write-through to store
 	if m.store != nil {
@@ -209,33 +208,32 @@ func (m *RunManager) UpdateSummary(runID string, summary RunSummary) {
 // Complete marks a run as complete.
 func (m *RunManager) Complete(runID string, status string) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	run, ok := m.runs[runID]
 	if !ok {
+		m.mu.Unlock()
 		return
 	}
 	now := time.Now().UTC()
 	run.Status = status
 	run.CompletedAt = &now
+	storedRun := state.Run{
+		ID:          run.ID,
+		Mode:        run.Mode,
+		Status:      run.Status,
+		CreatedAt:   run.CreatedAt,
+		StartedAt:   run.StartedAt,
+		CompletedAt: run.CompletedAt,
+	}
+	if b, err := json.Marshal(run.Summary); err == nil {
+		storedRun.SummaryJSON = string(b)
+	}
+	m.mu.Unlock()
 
 	// Write-through to store
 	if m.store != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		var summaryJSON string
-		if b, err := json.Marshal(run.Summary); err == nil {
-			summaryJSON = string(b)
-		}
-		_ = m.store.SaveRun(ctx, &state.Run{
-			ID:          run.ID,
-			Mode:        run.Mode,
-			Status:      run.Status,
-			CreatedAt:   run.CreatedAt,
-			StartedAt:   run.StartedAt,
-			CompletedAt: run.CompletedAt,
-			SummaryJSON: summaryJSON,
-		})
+		_ = m.store.SaveRun(ctx, &storedRun)
 	}
 }
 

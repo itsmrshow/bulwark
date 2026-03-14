@@ -8,17 +8,21 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/itsmrshow/bulwark/internal/logging"
 	"github.com/itsmrshow/bulwark/internal/metrics"
+	"golang.org/x/sync/singleflight"
 )
 
 // Client handles registry operations
 type Client struct {
 	httpClient *http.Client
 	logger     *logging.Logger
-	authCache  map[string]string // registry -> token
+	authMu     sync.RWMutex
+	authCache  map[string]string // registry/repository -> token
+	tokenGroup singleflight.Group
 }
 
 // NewClient creates a new registry client
@@ -173,7 +177,7 @@ func (c *Client) fetchManifest(ctx context.Context, ref *ImageReference, token s
 		if challenge != "" {
 			if newToken, err := c.getTokenFromChallenge(ctx, ref, challenge); err == nil && newToken != "" {
 				cacheKey := fmt.Sprintf("%s/%s", ref.Registry, ref.Repository)
-				c.authCache[cacheKey] = newToken
+				c.setCachedToken(cacheKey, newToken)
 				return c.fetchManifest(ctx, ref, newToken)
 			}
 		}
@@ -289,24 +293,48 @@ func parseAuthChallenge(header string) map[string]string {
 
 // getAuthToken gets an auth token for the registry
 func (c *Client) getAuthToken(ctx context.Context, ref *ImageReference) (string, error) {
-	// Check cache
 	cacheKey := fmt.Sprintf("%s/%s", ref.Registry, ref.Repository)
-	if token, ok := c.authCache[cacheKey]; ok {
+	if token, ok := c.cachedToken(cacheKey); ok {
 		return token, nil
 	}
 
 	// Docker Hub uses a different auth flow
 	if ref.IsDockerHub() {
-		token, err := c.getDockerHubToken(ctx, ref)
+		token, err, _ := c.tokenGroup.Do(cacheKey, func() (interface{}, error) {
+			if token, ok := c.cachedToken(cacheKey); ok {
+				return token, nil
+			}
+
+			token, err := c.getDockerHubToken(ctx, ref)
+			if err != nil {
+				return "", err
+			}
+			c.setCachedToken(cacheKey, token)
+			return token, nil
+		})
 		if err != nil {
 			return "", err
 		}
-		c.authCache[cacheKey] = token
-		return token, nil
+		return token.(string), nil
 	}
 
 	// For other registries, try anonymous access first
 	return "", nil
+}
+
+func (c *Client) cachedToken(cacheKey string) (string, bool) {
+	c.authMu.RLock()
+	defer c.authMu.RUnlock()
+
+	token, ok := c.authCache[cacheKey]
+	return token, ok
+}
+
+func (c *Client) setCachedToken(cacheKey, token string) {
+	c.authMu.Lock()
+	defer c.authMu.Unlock()
+
+	c.authCache[cacheKey] = token
 }
 
 // getDockerHubToken gets a token for Docker Hub

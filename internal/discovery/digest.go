@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/itsmrshow/bulwark/internal/docker"
@@ -11,17 +12,33 @@ import (
 // resolveRepoDigest returns a repo digest that matches the image reference.
 // Falls back to the image ID if no repo digest is available.
 func resolveRepoDigest(ctx context.Context, dockerClient *docker.Client, imageName, imageID string) string {
+	return resolveRepoDigestCached(ctx, dockerClient, imageName, imageID, nil)
+}
+
+func resolveRepoDigestCached(ctx context.Context, dockerClient *docker.Client, imageName, imageID string, cache map[string]string) string {
 	if imageID == "" {
 		return ""
+	}
+	cacheKey := fmt.Sprintf("%s|%s", imageID, imageName)
+	if cache != nil {
+		if digest, ok := cache[cacheKey]; ok {
+			return digest
+		}
 	}
 
 	inspect, err := dockerClient.ImageInspect(ctx, imageID)
 	if err != nil {
+		if cache != nil {
+			cache[cacheKey] = imageID
+		}
 		return imageID
 	}
 
 	ref, err := registry.ParseImageReference(imageName)
 	if err != nil {
+		if cache != nil {
+			cache[cacheKey] = imageID
+		}
 		return imageID
 	}
 
@@ -44,6 +61,9 @@ func resolveRepoDigest(ctx context.Context, dockerClient *docker.Client, imageNa
 		digest := parts[1]
 		for _, candidate := range candidates {
 			if repo == candidate {
+				if cache != nil {
+					cache[cacheKey] = digest
+				}
 				return digest
 			}
 		}
@@ -52,9 +72,15 @@ func resolveRepoDigest(ctx context.Context, dockerClient *docker.Client, imageNa
 	if len(inspect.RepoDigests) == 1 {
 		parts := strings.SplitN(inspect.RepoDigests[0], "@", 2)
 		if len(parts) == 2 {
+			if cache != nil {
+				cache[cacheKey] = parts[1]
+			}
 			return parts[1]
 		}
 	}
 
+	if cache != nil {
+		cache[cacheKey] = imageID
+	}
 	return imageID
 }
