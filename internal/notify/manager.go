@@ -143,7 +143,7 @@ func (m *Manager) restartScheduler() {
 	m.Stop()
 
 	settings := m.Settings()
-	autoUpdateActive := settings.AutoUpdateEnabled && (settings.AutoUpdateSafe || settings.AutoUpdateUnsafe) && m.applyFn != nil
+	autoUpdateActive := settings.AutoUpdateEnabled && m.applyFn != nil
 	if !settings.NotifyOnFind && !settings.DigestEnabled && !autoUpdateActive {
 		return
 	}

@@ -12,11 +12,11 @@ import (
 )
 
 const (
-	settingsKey          = "notifications.settings"
-	lastHashKey          = "notifications.last_hash"
-	defaultCheck         = "*/15 * * * *"
-	defaultDigest        = "0 9 * * *"
-	defaultAutoUpdateCron = "0 3 * * *"
+	settingsKey           = "notifications.settings"
+	lastHashKey           = "notifications.last_hash"
+	defaultCheck          = "*/15 * * * *"
+	defaultDigest         = "0 9 * * *"
+	defaultAutoUpdateCron = "CRON_TZ=America/New_York 0 3 * * *"
 )
 
 // Settings controls notification behavior.
@@ -32,7 +32,7 @@ type Settings struct {
 
 	// AutoUpdateEnabled gates the entire auto-update scheduler.
 	AutoUpdateEnabled bool `json:"auto_update_enabled"`
-	// AutoUpdateSafe triggers updates for stateless, probed (risk=safe) services.
+	// AutoUpdateSafe is kept for compatibility; enabled auto-updates always include safe updates.
 	AutoUpdateSafe bool `json:"auto_update_safe"`
 	// AutoUpdateUnsafe extends auto-updates to stateful, policy=notify, or probe-missing services.
 	AutoUpdateUnsafe bool   `json:"auto_update_unsafe"`
@@ -61,6 +61,9 @@ func (s Settings) Normalize() Settings {
 	}
 	if s.AutoUpdateCron == "" {
 		s.AutoUpdateCron = defaultAutoUpdateCron
+	}
+	if s.AutoUpdateEnabled {
+		s.AutoUpdateSafe = true
 	}
 	return s
 }

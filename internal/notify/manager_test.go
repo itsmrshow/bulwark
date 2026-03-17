@@ -51,6 +51,12 @@ func TestSettingsNormalize(t *testing.T) {
 	if n.DigestCron == "" {
 		t.Error("expected non-empty digest cron after normalize")
 	}
+
+	s = Settings{AutoUpdateEnabled: true}
+	n = s.Normalize()
+	if !n.AutoUpdateSafe {
+		t.Error("expected safe auto-updates to be enabled when auto-update is enabled")
+	}
 }
 
 func TestSettingsValidate(t *testing.T) {
@@ -129,5 +135,15 @@ func TestDecodeEmpty(t *testing.T) {
 	}
 	if settings.CheckCron != defaultCheck {
 		t.Errorf("expected default check cron, got %s", settings.CheckCron)
+	}
+}
+
+func TestDecodeLegacyAutoUpdateEnablesSafe(t *testing.T) {
+	settings, err := Decode(`{"auto_update_enabled":true,"auto_update_safe":false,"auto_update_unsafe":false}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !settings.AutoUpdateSafe {
+		t.Error("expected safe auto-updates to be normalized on for legacy settings")
 	}
 }

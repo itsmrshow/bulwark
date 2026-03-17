@@ -114,6 +114,8 @@ func (f *fileStore) Save(ctx context.Context, settings Settings) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	settings = settings.Normalize()
+
 	encoded, err := Encode(settings)
 	if err != nil {
 		return err
