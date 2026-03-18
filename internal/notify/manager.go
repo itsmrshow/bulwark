@@ -16,6 +16,32 @@ import (
 
 type PlanFunc func(ctx context.Context) (*planner.Plan, error)
 
+type AutoUpdateRunReport struct {
+	RunID       string
+	Mode        string
+	Status      string
+	StartedAt   time.Time
+	CompletedAt time.Time
+	Summary     AutoUpdateRunSummary
+	Items       []AutoUpdateRunItem
+}
+
+type AutoUpdateRunSummary struct {
+	UpdatesApplied int
+	UpdatesSkipped int
+	UpdatesFailed  int
+	Rollbacks      int
+}
+
+type AutoUpdateRunItem struct {
+	Target      string
+	Service     string
+	Image       string
+	Result      string
+	CompletedAt time.Time
+	Details     string
+}
+
 // ApplyFunc triggers an automatic update run. safe and unsafe correspond to
 // which risk tiers should be updated.
 type ApplyFunc func(ctx context.Context, safe bool, unsafe bool)
@@ -415,6 +441,19 @@ func (m *Manager) NotifyResult(ctx context.Context, result *state.UpdateResult, 
 	}
 }
 
+func (m *Manager) NotifyAutoUpdateRun(ctx context.Context, report AutoUpdateRunReport) {
+	settings := m.Settings()
+	if !settings.DiscordEnabled || settings.DiscordWebhook == "" {
+		return
+	}
+
+	embed := formatAutoUpdateRunEmbed(report)
+	discord := DiscordNotifier{WebhookURL: settings.DiscordWebhook}
+	if err := discord.sendEmbed(ctx, embed); err != nil {
+		m.logger.Warn().Err(err).Str("run_id", report.RunID).Msg("failed to send auto-update completion notification")
+	}
+}
+
 func formatDiscoveryEmbed(mode string, updates []planner.PlanItem, plan *planner.Plan) discordEmbed {
 	title := "🔄 Updates Available"
 	if mode == "digest" {
@@ -470,6 +509,77 @@ func formatDiscoveryEmbed(mode string, updates []planner.PlanItem, plan *planner
 		Fields:      fields,
 		Footer:      &discordEmbedFooter{Text: fmt.Sprintf("Bulwark • %s", mode)},
 		Timestamp:   plan.GeneratedAt.UTC().Format(time.RFC3339),
+	}
+}
+
+func formatAutoUpdateRunEmbed(report AutoUpdateRunReport) discordEmbed {
+	title := "✅ Auto-Update Completed"
+	color := 0x57F287
+	if report.Status == "failed" {
+		title = "❌ Auto-Update Completed With Failures"
+		color = 0xED4245
+	} else if report.Summary.Rollbacks > 0 {
+		title = "⚠️ Auto-Update Completed With Rollbacks"
+		color = 0xFEE75C
+	}
+
+	duration := report.CompletedAt.Sub(report.StartedAt).Round(time.Millisecond).String()
+	fields := []discordEmbedField{
+		{Name: "Run ID", Value: report.RunID, Inline: false},
+		{Name: "Applied", Value: fmt.Sprintf("`%d`", report.Summary.UpdatesApplied), Inline: true},
+		{Name: "Skipped", Value: fmt.Sprintf("`%d`", report.Summary.UpdatesSkipped), Inline: true},
+		{Name: "Failed", Value: fmt.Sprintf("`%d`", report.Summary.UpdatesFailed), Inline: true},
+		{Name: "Rollbacks", Value: fmt.Sprintf("`%d`", report.Summary.Rollbacks), Inline: true},
+		{Name: "Mode", Value: fmt.Sprintf("`%s`", nonEmpty(report.Mode, "safe")), Inline: true},
+		{Name: "Duration", Value: duration, Inline: true},
+	}
+
+	limit := len(report.Items)
+	if limit > 8 {
+		limit = 8
+	}
+	for i := 0; i < limit; i++ {
+		item := report.Items[i]
+		details := strings.TrimSpace(item.Details)
+		if details == "" {
+			details = "No details"
+		}
+		fields = append(fields, discordEmbedField{
+			Name: fmt.Sprintf("%s/%s", nonEmpty(item.Target, "unknown"), nonEmpty(item.Service, "unknown")),
+			Value: fmt.Sprintf(
+				"%s\n`%s`\n%s\n%s",
+				item.Image,
+				item.Result,
+				item.CompletedAt.UTC().Format(time.RFC3339),
+				truncateNotificationText(details, 140),
+			),
+		})
+	}
+	if len(report.Items) > limit {
+		fields = append(fields, discordEmbedField{
+			Name:  "…",
+			Value: fmt.Sprintf("and %d more result(s)", len(report.Items)-limit),
+		})
+	}
+
+	description := fmt.Sprintf(
+		"Scheduled auto-update finished with %d applied, %d skipped, %d failed, and %d rollback(s).",
+		report.Summary.UpdatesApplied,
+		report.Summary.UpdatesSkipped,
+		report.Summary.UpdatesFailed,
+		report.Summary.Rollbacks,
+	)
+	if len(report.Items) == 0 {
+		description = "Scheduled auto-update finished with no container changes."
+	}
+
+	return discordEmbed{
+		Title:       title,
+		Description: description,
+		Color:       color,
+		Fields:      fields,
+		Footer:      &discordEmbedFooter{Text: "Bulwark • auto-update"},
+		Timestamp:   report.CompletedAt.UTC().Format(time.RFC3339),
 	}
 }
 

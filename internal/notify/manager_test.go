@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestMemoryStore(t *testing.T) {
@@ -145,5 +146,50 @@ func TestDecodeLegacyAutoUpdateEnablesSafe(t *testing.T) {
 	}
 	if !settings.AutoUpdateSafe {
 		t.Error("expected safe auto-updates to be normalized on for legacy settings")
+	}
+}
+
+func TestFormatAutoUpdateRunEmbed(t *testing.T) {
+	completedAt := time.Date(2026, 3, 18, 7, 0, 0, 0, time.UTC)
+	embed := formatAutoUpdateRunEmbed(AutoUpdateRunReport{
+		RunID:       "run-123",
+		Mode:        "safe",
+		Status:      "failed",
+		StartedAt:   completedAt.Add(-2 * time.Minute),
+		CompletedAt: completedAt,
+		Summary: AutoUpdateRunSummary{
+			UpdatesApplied: 1,
+			UpdatesSkipped: 2,
+			UpdatesFailed:  1,
+			Rollbacks:      1,
+		},
+		Items: []AutoUpdateRunItem{
+			{
+				Target:      "homarr",
+				Service:     "homarr",
+				Image:       "ghcr.io/homarr-labs/homarr:latest",
+				Result:      "updated",
+				CompletedAt: completedAt.Add(-time.Minute),
+				Details:     "Update applied successfully",
+			},
+			{
+				Target:      "sonarr",
+				Service:     "sonarr",
+				Image:       "lscr.io/linuxserver/sonarr:latest",
+				Result:      "rolled_back",
+				CompletedAt: completedAt,
+				Details:     "Update failed and rollback completed",
+			},
+		},
+	})
+
+	if embed.Title == "" {
+		t.Fatal("expected title")
+	}
+	if len(embed.Fields) < 8 {
+		t.Fatalf("expected summary and item fields, got %d", len(embed.Fields))
+	}
+	if embed.Timestamp != completedAt.Format(time.RFC3339) {
+		t.Fatalf("unexpected timestamp: %s", embed.Timestamp)
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/itsmrshow/bulwark/internal/discovery"
 	"github.com/itsmrshow/bulwark/internal/docker"
 	"github.com/itsmrshow/bulwark/internal/executor"
+	"github.com/itsmrshow/bulwark/internal/notify"
 	"github.com/itsmrshow/bulwark/internal/planner"
 	"github.com/itsmrshow/bulwark/internal/policy"
 	"github.com/itsmrshow/bulwark/internal/registry"
@@ -588,15 +589,18 @@ func (s *Server) buildPlan(ctx context.Context, req planRequest) (*planner.Plan,
 
 func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 	ctx := context.Background()
+	runStartedAt := time.Now().UTC()
 
 	logger := s.logger.WithComponent("apply")
 	s.runs.AddEvent(runID, RunEvent{Level: "info", Step: "start", Message: "Apply run started"})
 	s.runs.AddEvent(runID, RunEvent{Level: "info", Step: "plan", Message: "Building update plan"})
+	autoUpdateItems := make([]notify.AutoUpdateRunItem, 0)
 
 	dockerClient, err := docker.NewClient()
 	if err != nil {
 		s.runs.AddEvent(runID, RunEvent{Level: "error", Step: "docker", Message: "Failed to create Docker client", Data: map[string]interface{}{"error": err.Error()}})
 		s.runs.Complete(runID, "failed")
+		s.notifyAutoUpdateCompletion(runID, mode, runStartedAt, "failed", RunSummary{}, autoUpdateItems)
 		return
 	}
 	defer func() { _ = dockerClient.Close() }()
@@ -628,6 +632,7 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 		if planErr != nil {
 			s.runs.AddEvent(runID, RunEvent{Level: "error", Step: "plan", Message: "Failed to build plan", Data: map[string]interface{}{"error": planErr.Error()}})
 			s.runs.Complete(runID, "failed")
+			s.notifyAutoUpdateCompletion(runID, mode, runStartedAt, "failed", RunSummary{}, autoUpdateItems)
 			return
 		}
 		if req.Target == "" {
@@ -655,6 +660,7 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 		s.runs.AddEvent(runID, RunEvent{Level: "info", Step: "complete", Message: "No updates available; nothing to apply"})
 		updateSummary()
 		s.runs.Complete(runID, "completed")
+		s.notifyAutoUpdateCompletion(runID, mode, runStartedAt, "completed", summary, autoUpdateItems)
 		return
 	}
 
@@ -682,6 +688,7 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 		if mode == "safe" && item.Risk != planner.RiskSafe {
 			summary.UpdatesSkipped++
 			s.runs.AddEvent(runID, RunEvent{Level: "info", Target: item.TargetName, Service: item.ServiceName, Step: "skip", Message: "Skipped (not safe)"})
+			autoUpdateItems = appendAutoUpdateItem(autoUpdateItems, item, "skipped", time.Now().UTC(), "Skipped (not safe)")
 			updateSummary()
 			continue
 		}
@@ -691,6 +698,7 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 		if !item.Allowed && !forceUpdate {
 			summary.UpdatesSkipped++
 			s.runs.AddEvent(runID, RunEvent{Level: "warn", Target: item.TargetName, Service: item.ServiceName, Step: "skip", Message: item.Reason})
+			autoUpdateItems = appendAutoUpdateItem(autoUpdateItems, item, "skipped", time.Now().UTC(), item.Reason)
 			updateSummary()
 			continue
 		}
@@ -704,6 +712,7 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 		if result.Success {
 			summary.UpdatesApplied++
 			s.runs.AddEvent(runID, RunEvent{Level: "info", Target: item.TargetName, Service: item.ServiceName, Step: "complete", Message: "Update applied"})
+			autoUpdateItems = appendAutoUpdateItem(autoUpdateItems, item, "updated", result.CompletedAt.UTC(), "Update applied successfully")
 			updateSummary()
 			continue
 		}
@@ -711,28 +720,37 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 		if executor.IsSkipError(result.Error) {
 			summary.UpdatesSkipped++
 			s.runs.AddEvent(runID, RunEvent{Level: "warn", Target: item.TargetName, Service: item.ServiceName, Step: "skip", Message: executor.SkipReason(result.Error)})
+			autoUpdateItems = appendAutoUpdateItem(autoUpdateItems, item, "skipped", result.CompletedAt.UTC(), executor.SkipReason(result.Error))
 			updateSummary()
 			continue
 		}
 
 		summary.UpdatesFailed++
 		s.runs.AddEvent(runID, RunEvent{Level: "error", Target: item.TargetName, Service: item.ServiceName, Step: "failed", Message: fmt.Sprintf("Update failed: %v", result.Error)})
+		resultLabel := "failed"
+		resultDetails := fmt.Sprintf("Update failed: %v", result.Error)
 		updateSummary()
 
 		if result.RollbackPerformed {
 			summary.Rollbacks++
 			s.runs.AddEvent(runID, RunEvent{Level: "info", Target: item.TargetName, Service: item.ServiceName, Step: "rollback", Message: "Rollback complete"})
+			resultLabel = "rolled_back"
+			resultDetails = "Update failed and rollback completed"
 			updateSummary()
 		} else if policyEngine.ShouldRollback(ctx, result) {
 			s.runs.AddEvent(runID, RunEvent{Level: "warn", Target: item.TargetName, Service: item.ServiceName, Step: "rollback", Message: "Attempting rollback"})
 			if err := exec.ExecuteRollback(ctx, item.Target, item.Service, result); err != nil {
 				s.runs.AddEvent(runID, RunEvent{Level: "error", Target: item.TargetName, Service: item.ServiceName, Step: "rollback", Message: fmt.Sprintf("Rollback failed: %v", err)})
+				resultDetails = fmt.Sprintf("%s; rollback failed: %v", resultDetails, err)
 			} else {
 				summary.Rollbacks++
 				s.runs.AddEvent(runID, RunEvent{Level: "info", Target: item.TargetName, Service: item.ServiceName, Step: "rollback", Message: "Rollback complete"})
+				resultLabel = "rolled_back"
+				resultDetails = "Update failed and rollback completed"
 				updateSummary()
 			}
 		}
+		autoUpdateItems = appendAutoUpdateItem(autoUpdateItems, item, resultLabel, result.CompletedAt.UTC(), resultDetails)
 
 		// Update-path failures without probes are not persisted by executor; store once here
 		// after rollback handling so history reflects the final outcome.
@@ -758,6 +776,44 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 		status = "completed"
 	}
 	s.runs.Complete(runID, status)
+	s.notifyAutoUpdateCompletion(runID, mode, runStartedAt, status, summary, autoUpdateItems)
+}
+
+func appendAutoUpdateItem(items []notify.AutoUpdateRunItem, item planner.PlanItem, result string, completedAt time.Time, details string) []notify.AutoUpdateRunItem {
+	return append(items, notify.AutoUpdateRunItem{
+		Target:      item.TargetName,
+		Service:     item.ServiceName,
+		Image:       item.Image,
+		Result:      result,
+		CompletedAt: completedAt,
+		Details:     details,
+	})
+}
+
+func (s *Server) notifyAutoUpdateCompletion(runID, mode string, startedAt time.Time, status string, summary RunSummary, items []notify.AutoUpdateRunItem) {
+	run, ok := s.runs.Get(runID)
+	if !ok || run.Mode != "auto-update" || s.notify == nil {
+		return
+	}
+
+	completedAt := time.Now().UTC()
+	if run.CompletedAt != nil {
+		completedAt = run.CompletedAt.UTC()
+	}
+	go s.notify.NotifyAutoUpdateRun(context.Background(), notify.AutoUpdateRunReport{
+		RunID:       run.ID,
+		Mode:        mode,
+		Status:      status,
+		StartedAt:   startedAt,
+		CompletedAt: completedAt,
+		Summary: notify.AutoUpdateRunSummary{
+			UpdatesApplied: summary.UpdatesApplied,
+			UpdatesSkipped: summary.UpdatesSkipped,
+			UpdatesFailed:  summary.UpdatesFailed,
+			Rollbacks:      summary.Rollbacks,
+		},
+		Items: items,
+	})
 }
 
 func (s *Server) uiHandler() http.Handler {
