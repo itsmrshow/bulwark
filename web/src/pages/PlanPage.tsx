@@ -170,7 +170,7 @@ export function PlanPage({ readOnly }: { readOnly: boolean }) {
             </label>
           </div>
         )}
-        <div className="divide-y divide-ink-800/60">
+        <div className="divide-y divide-ink-800/40">
           {updates.length === 0 && (
             <EmptyState
               icon={ClipboardCheck}
@@ -179,39 +179,50 @@ export function PlanPage({ readOnly }: { readOnly: boolean }) {
             />
           )}
           {updates.map((item) => (
-            <div key={item.service_id} className="flex flex-col gap-3 py-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="flex items-center gap-2">
+            <div
+              key={item.service_id}
+              className={`flex flex-col gap-3 px-1 py-4 transition-colors hover:bg-ink-800/20 lg:flex-row lg:items-center lg:justify-between ${
+                selected.has(item.service_id) ? "bg-signal-500/5" : ""
+              }`}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2.5">
                   <button
-                    className="h-4 w-4 rounded border border-ink-700"
+                    className={`h-4 w-4 rounded border transition-colors ${
+                      selected.has(item.service_id)
+                        ? "border-signal-500 bg-signal-500"
+                        : "border-ink-600 hover:border-signal-500/60"
+                    }`}
                     aria-label="select"
                     onClick={() => toggleSelect(item.service_id)}
-                  >
-                    {selected.has(item.service_id) && <div className="h-full w-full bg-signal-500" />}
-                  </button>
-                  <div className="text-sm font-semibold text-ink-100">
-                    {item.target_name}/{item.service_name}
-                  </div>
+                  />
+                  <span className="text-sm font-semibold text-ink-100">
+                    <span className="text-ink-400">{item.target_name}</span>
+                    <span className="text-ink-600">/</span>
+                    {item.service_name}
+                  </span>
                   <RiskBadge risk={item.risk} />
                   {!item.allowed && <Badge variant="danger">Blocked</Badge>}
                 </div>
-                <div className="mt-2 text-xs text-ink-400">{item.reason}</div>
-              </div>
-              <div className="flex flex-col gap-1 text-xs text-ink-300">
-                <div className="flex items-center gap-3">
-                  <span>{item.policy}</span>
+                <div className="mt-1.5 flex items-center gap-3 pl-[26px] text-xs text-ink-500">
+                  <span className="font-medium uppercase tracking-wide">{item.policy}</span>
+                  <span className="text-ink-700">·</span>
                   <span>{item.tier}</span>
-                  <span className="truncate">{item.image}</span>
+                  <span className="text-ink-700">·</span>
+                  <span className="truncate font-mono">{item.image}</span>
                 </div>
-                <div className="flex items-center gap-1 font-mono">
-                  <span className="rounded bg-ink-800 px-1.5 py-0.5 text-ink-400">
-                    {item.current_digest ? formatDigest(item.current_digest) : "no digest"}
-                  </span>
-                  <span className="text-ink-600">→</span>
-                  <span className="rounded bg-ink-800 px-1.5 py-0.5 text-signal-400">
-                    {formatDigest(item.remote_digest)}
-                  </span>
-                </div>
+                {item.reason && (
+                  <div className="mt-1 pl-[26px] text-xs text-ink-500">{item.reason}</div>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 font-mono text-xs shrink-0">
+                <span className="rounded-md bg-ink-800 px-2 py-1 text-ink-400 ring-1 ring-ink-700/60">
+                  {item.current_digest ? formatDigest(item.current_digest) : "—"}
+                </span>
+                <span className="text-ink-600">→</span>
+                <span className="rounded-md bg-signal-500/10 px-2 py-1 text-signal-400 ring-1 ring-signal-500/30">
+                  {formatDigest(item.remote_digest)}
+                </span>
               </div>
             </div>
           ))}
