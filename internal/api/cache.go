@@ -36,3 +36,10 @@ func (c *planCache) Set(plan *planner.Plan) {
 	c.plan = plan
 	c.expires = time.Now().Add(c.ttl)
 }
+
+func (c *planCache) Invalidate() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.plan = nil
+	c.expires = time.Time{}
+}

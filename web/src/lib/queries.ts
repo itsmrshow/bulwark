@@ -105,3 +105,9 @@ export function useTestNotification() {
     mutationFn: () => apiFetch("/api/notifications/test", { method: "POST" })
   });
 }
+
+export function useRefresh() {
+  return useMutation({
+    mutationFn: () => apiFetch("/api/refresh", { method: "POST" })
+  });
+}

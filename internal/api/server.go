@@ -110,6 +110,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/api/notifications/test", s.requireWrite(http.HandlerFunc(s.handleNotificationsTest)))
 	mux.HandleFunc("/api/targets", s.handleTargets)
 	mux.HandleFunc("/api/targets/", s.handleTargetByID)
+	mux.HandleFunc("/api/refresh", s.handleRefresh)
 	mux.HandleFunc("/api/plan", s.handlePlan)
 	mux.Handle("/api/apply", s.requireWrite(http.HandlerFunc(s.handleApply)))
 	mux.HandleFunc("/api/runs/", s.handleRun)

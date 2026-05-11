@@ -6,8 +6,10 @@ import {
   RefreshCw,
   RotateCcw
 } from "lucide-react";
-import { useOverview } from "../lib/queries";
+import { useQueryClient } from "@tanstack/react-query";
+import { useOverview, useRefresh } from "../lib/queries";
 import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
 import { TimeAgo } from "../components/TimeAgo";
 
@@ -64,6 +66,15 @@ function StatCard({
 
 export function OverviewPage() {
   const { data, isLoading, error } = useOverview();
+  const queryClient = useQueryClient();
+  const refresh = useRefresh();
+
+  const handleRefresh = async () => {
+    await refresh.mutateAsync({} as never);
+    await queryClient.invalidateQueries({ queryKey: ["overview"] });
+    await queryClient.invalidateQueries({ queryKey: ["plan"] });
+    await queryClient.invalidateQueries({ queryKey: ["targets"] });
+  };
 
   if (isLoading) {
     return (
@@ -189,7 +200,19 @@ export function OverviewPage() {
             <h2 className="font-display text-base font-semibold text-ink-100">Activity</h2>
             <p className="text-xs text-ink-500">Last 20 events</p>
           </div>
-          <Activity className="h-4 w-4 text-ink-600" />
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={refresh.isPending}
+              title="Refresh update data"
+            >
+              <RefreshCw className={`h-4 w-4 ${refresh.isPending ? "animate-spin" : ""}`} />
+              <span className="ml-1.5 text-xs">{refresh.isPending ? "Refreshing…" : "Refresh"}</span>
+            </Button>
+            <Activity className="h-4 w-4 text-ink-600" />
+          </div>
         </div>
 
         <div className="divide-y divide-ink-800/40">

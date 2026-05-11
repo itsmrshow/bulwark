@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, ClipboardCheck } from "lucide-react";
-import { useApply, usePlan } from "../lib/queries";
+import { AlertTriangle, ClipboardCheck, RefreshCw } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useApply, usePlan, useRefresh } from "../lib/queries";
 import type { PlanItem } from "../lib/types";
 import { Card, CardHeader, CardTitle, CardDescription } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -26,9 +27,18 @@ export function PlanPage({ readOnly }: { readOnly: boolean }) {
   const applyMutation = useApply();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const refresh = useRefresh();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmMode, setConfirmMode] = useState<"safe" | "selected" | null>(null);
   const [confirmText, setConfirmText] = useState("");
+
+  const handleRefresh = async () => {
+    await refresh.mutateAsync({} as never);
+    await queryClient.invalidateQueries({ queryKey: ["plan"] });
+    await queryClient.invalidateQueries({ queryKey: ["overview"] });
+    await queryClient.invalidateQueries({ queryKey: ["targets"] });
+  };
 
   const updates = useMemo(() => groupPlan(plan?.items ?? []), [plan?.items]);
 
@@ -123,6 +133,16 @@ export function PlanPage({ readOnly }: { readOnly: boolean }) {
           <Badge variant="muted">{plan.service_count} services tracked</Badge>
         </div>
         <div className="flex flex-wrap gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={refresh.isPending}
+            title="Re-fetch digests from registry"
+          >
+            <RefreshCw className={`h-4 w-4 ${refresh.isPending ? "animate-spin" : ""}`} />
+            <span className="ml-1.5">{refresh.isPending ? "Refreshing…" : "Refresh"}</span>
+          </Button>
           <Button
             variant="primary"
             size="sm"

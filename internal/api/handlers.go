@@ -296,6 +296,15 @@ func (s *Server) handleTargetByID(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, target)
 }
 
+func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed", "")
+		return
+	}
+	s.planCache.Invalidate()
+	writeJSON(w, http.StatusOK, map[string]interface{}{"refreshed": true})
+}
+
 func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed", "")
