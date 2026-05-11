@@ -24,13 +24,19 @@ type Config struct {
 	RetryBackoff time.Duration
 }
 
-// DefaultConfig returns default probe configuration
+// DefaultConfig returns default probe configuration.
+//
+// Many real services (Sonarr, Radarr, Jellyfin, Plex, etc.) take 10–30s to
+// start answering HTTP after `docker compose up -d`. The previous defaults
+// gave up after ~3s and rolled back perfectly healthy updates. The wider
+// window below is forgiving of slow cold starts without dragging out the
+// failure path for genuinely broken updates (~60s worst case).
 func DefaultConfig() Config {
 	return Config{
 		Timeout:      10 * time.Second,
 		Interval:     2 * time.Second,
-		Retries:      3,
-		RetryBackoff: 1 * time.Second,
+		Retries:      30,
+		RetryBackoff: 2 * time.Second,
 	}
 }
 

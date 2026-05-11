@@ -55,3 +55,7 @@ config.yml
 AGENTS.md
 CLAUDE.md
 TODO.md
+.omc/
+.serena/
+graphify-out/
+.claude/

@@ -90,6 +90,15 @@ func (c *Client) FetchDigest(ctx context.Context, image string) (string, error) 
 		return "", fmt.Errorf("failed to parse image reference: %w", err)
 	}
 
+	// When a reference carries both a tag and a digest (e.g. Compose v2
+	// pins running containers as repo:tag@sha256:...), querying by the
+	// digest just echoes the pin back. The whole point of this call is
+	// "what does the tag currently point to?" — so drop the digest and
+	// resolve by tag.
+	if ref.Tag != "" && ref.Digest != "" {
+		ref.Digest = ""
+	}
+
 	defer func() {
 		metrics.DigestFetchDuration.WithLabelValues(ref.Registry).Observe(time.Since(start).Seconds())
 	}()

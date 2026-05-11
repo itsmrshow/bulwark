@@ -82,6 +82,28 @@ func TestParseImageReference_Digest(t *testing.T) {
 	}
 }
 
+func TestParseImageReference_TagAndDigest(t *testing.T) {
+	// Docker Compose v2 pins running containers in repo:tag@sha256:... form.
+	// Both the tag and digest must be preserved so FetchDigest can drop the
+	// pin and resolve the tag's current digest.
+	ref, err := ParseImageReference("lscr.io/linuxserver/radarr:latest@sha256:f08dda38e7d12e5a722d9a5cb6e54acaf63c8598fefeefec88effe0c0d0038dd")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ref.Registry != "lscr.io" {
+		t.Errorf("Registry = %q, want lscr.io", ref.Registry)
+	}
+	if ref.Repository != "linuxserver/radarr" {
+		t.Errorf("Repository = %q, want linuxserver/radarr", ref.Repository)
+	}
+	if ref.Tag != "latest" {
+		t.Errorf("Tag = %q, want latest", ref.Tag)
+	}
+	if ref.Digest != "sha256:f08dda38e7d12e5a722d9a5cb6e54acaf63c8598fefeefec88effe0c0d0038dd" {
+		t.Errorf("Digest = %q, want sha256:f08dda...", ref.Digest)
+	}
+}
+
 func TestParseAuthChallenge(t *testing.T) {
 	tests := []struct {
 		header string
