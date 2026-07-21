@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/itsmrshow/bulwark/internal/registry"
 )
 
 // Config holds API/UI server configuration.
@@ -22,6 +24,7 @@ type Config struct {
 	WriteRateRPS   float64
 	WriteRateBurst int
 	PlanCacheTTL   time.Duration
+	DigestCacheTTL time.Duration
 	LockTimeout    time.Duration
 	MetricsEnabled bool
 }
@@ -39,7 +42,11 @@ func LoadConfig() Config {
 		DataDir:        getEnv("BULWARK_DATA_DIR", "/data"),
 		WriteRateRPS:   getEnvFloat("BULWARK_WEB_WRITE_RPS", 1.0),
 		WriteRateBurst: getEnvInt("BULWARK_WEB_WRITE_BURST", 3),
-		PlanCacheTTL:   getEnvDuration("BULWARK_PLAN_CACHE_TTL", 15*time.Second),
+		// The UI polls /api/overview and /api/plan every 60s. A TTL below that
+		// meant every poll missed the cache and rebuilt the whole plan, which
+		// is what exhausted Docker Hub's anonymous pull limit.
+		PlanCacheTTL:   getEnvDuration("BULWARK_PLAN_CACHE_TTL", 5*time.Minute),
+		DigestCacheTTL: getEnvDuration("BULWARK_DIGEST_CACHE_TTL", registry.DefaultDigestTTL),
 		LockTimeout:    getEnvDuration("BULWARK_LOCK_TIMEOUT", 5*time.Minute),
 		MetricsEnabled: getEnvBool("BULWARK_METRICS_ENABLED", false),
 	}
@@ -48,6 +55,14 @@ func LoadConfig() Config {
 func (c Config) WithDefaults() Config {
 	if c.ConfigPath == "" {
 		c.ConfigPath = getEnv("BULWARK_CONFIG_PATH", filepath.Join(c.DataDir, "bulwark.json"))
+	}
+	// A zero TTL would switch digest caching off entirely, which is never the
+	// intent for a Config that simply left the field unset.
+	if c.DigestCacheTTL <= 0 {
+		c.DigestCacheTTL = registry.DefaultDigestTTL
+	}
+	if c.PlanCacheTTL <= 0 {
+		c.PlanCacheTTL = 5 * time.Minute
 	}
 	return c
 }

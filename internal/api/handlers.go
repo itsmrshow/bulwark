@@ -18,7 +18,6 @@ import (
 	"github.com/itsmrshow/bulwark/internal/notify"
 	"github.com/itsmrshow/bulwark/internal/planner"
 	"github.com/itsmrshow/bulwark/internal/policy"
-	"github.com/itsmrshow/bulwark/internal/registry"
 	"github.com/itsmrshow/bulwark/internal/state"
 )
 
@@ -302,6 +301,11 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.planCache.Invalidate()
+	if s.registry != nil {
+		// Manual refresh must reach past the plan cache to the digests it was
+		// built from, otherwise the rebuild just replays cached digests.
+		s.registry.InvalidateDigests()
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"refreshed": true})
 }
 
@@ -584,10 +588,9 @@ func (s *Server) buildPlan(ctx context.Context, req planRequest) (*planner.Plan,
 		discoverer = discoverer.WithStore(s.store)
 	}
 
-	registryClient := registry.NewClient(s.logger)
 	policyEngine := policy.NewEngine(s.logger)
 
-	plannerSvc := planner.NewPlanner(s.logger, discoverer, registryClient, policyEngine)
+	plannerSvc := planner.NewPlanner(s.logger, discoverer, s.registry, policyEngine)
 	plan, err := plannerSvc.BuildPlan(ctx, planner.PlanOptions{
 		Root:            s.cfg.Root,
 		TargetFilter:    req.Target,
@@ -599,6 +602,11 @@ func (s *Server) buildPlan(ctx context.Context, req planRequest) (*planner.Plan,
 func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 	ctx := context.Background()
 	runStartedAt := time.Now().UTC()
+
+	// An apply changes the digests running locally, so any cached plan is stale
+	// the moment the run ends. Only the plan is dropped: remote tag→digest
+	// mappings are unaffected by what we deploy.
+	defer s.planCache.Invalidate()
 
 	logger := s.logger.WithComponent("apply")
 	s.runs.AddEvent(runID, RunEvent{Level: "info", Step: "start", Message: "Apply run started"})
@@ -619,7 +627,7 @@ func (s *Server) executeApply(runID string, req applyRequest, mode string) {
 		discoverer = discoverer.WithStore(s.store)
 	}
 
-	registryClient := registry.NewClient(logger)
+	registryClient := s.registry
 	policyEngine := policy.NewEngine(logger)
 	plannerSvc := planner.NewPlanner(logger, discoverer, registryClient, policyEngine)
 

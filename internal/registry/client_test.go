@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/itsmrshow/bulwark/internal/logging"
 )
@@ -46,6 +49,10 @@ func TestParseImageReference(t *testing.T) {
 		{"ghcr.io/user/app:v2", "ghcr.io", "user/app", "v2", false},
 		{"registry.example.com/org/app:latest", "registry.example.com", "org/app", "latest", false},
 		{"", "", "", "", true},
+		// A container running from a dangling image reports a bare digest with
+		// no repository. Resolving it would query docker.io/library/sha256 and
+		// get a guaranteed 401, so it must be rejected before any request.
+		{"sha256:979202fb35994753a2adea609876fc24157edcf9a54c0acb0d180d6872c42960", "", "", "", true},
 	}
 
 	for _, tt := range tests {
@@ -136,41 +143,186 @@ func TestParseAuthChallenge(t *testing.T) {
 	}
 }
 
+// newTestClient wires a Client to a local TLS test server. Because
+// ManifestURL() always builds https://<registry>/..., pointing ref.Registry at
+// the httptest host is enough to exercise the real request path.
+func newTestClient(srv *httptest.Server) *Client {
+	c := NewClient(logging.Default())
+	c.httpClient = srv.Client()
+	return c
+}
+
+func testImage(srv *httptest.Server, repo string) string {
+	return strings.TrimPrefix(srv.URL, "https://") + "/" + repo
+}
+
 func TestFetchDigest_MockRegistry(t *testing.T) {
 	manifest := ManifestResponse{
 		SchemaVersion: 2,
 		MediaType:     "application/vnd.docker.distribution.manifest.v2+json",
-		Config: ManifestConfig{
-			Digest: "sha256:configdigest",
-		},
+		Config:        ManifestConfig{Digest: "sha256:configdigest"},
 	}
 
-	// Token server
-	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(TokenResponse{Token: "test-token"})
-	}))
-	defer tokenServer.Close()
-
-	// Registry server
-	registry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Docker-Content-Digest", "sha256:testdigest123")
-		json.NewEncoder(w).Encode(manifest)
+		_ = json.NewEncoder(w).Encode(manifest)
 	}))
-	defer registry.Close()
+	defer srv.Close()
 
-	logger := logging.Default()
-	client := &Client{
-		httpClient: registry.Client(),
-		logger:     logger.WithComponent("registry"),
-		authCache:  make(map[string]string),
+	client := newTestClient(srv)
+	digest, err := client.FetchDigest(context.Background(), testImage(srv, "library/nginx:latest"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if digest != "sha256:testdigest123" {
+		t.Errorf("digest = %q, want sha256:testdigest123", digest)
+	}
+}
+
+func TestFetchDigest_CachesAcrossCalls(t *testing.T) {
+	var manifestHits int32
+
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&manifestHits, 1)
+		w.Header().Set("Docker-Content-Digest", "sha256:cached")
+		_ = json.NewEncoder(w).Encode(ManifestResponse{SchemaVersion: 2})
+	}))
+	defer srv.Close()
+
+	client := newTestClient(srv)
+	image := testImage(srv, "library/nginx:latest")
+
+	for i := 0; i < 5; i++ {
+		if _, err := client.FetchDigest(context.Background(), image); err != nil {
+			t.Fatalf("call %d: unexpected error: %v", i, err)
+		}
 	}
 
-	// Mock the registry URL by adding auth token to cache
-	client.authCache["docker.io/library/nginx"] = "test-token"
+	if got := atomic.LoadInt32(&manifestHits); got != 1 {
+		t.Errorf("manifest requests = %d, want 1 (digest cache should absorb repeats)", got)
+	}
 
-	// We can't easily test against mock without overriding the URL,
-	// so we test the individual helpers instead
-	_ = client
+	client.InvalidateDigests()
+	if _, err := client.FetchDigest(context.Background(), image); err != nil {
+		t.Fatalf("unexpected error after invalidate: %v", err)
+	}
+	if got := atomic.LoadInt32(&manifestHits); got != 2 {
+		t.Errorf("manifest requests after invalidate = %d, want 2", got)
+	}
+}
+
+func TestFetchDigest_CachesFailures(t *testing.T) {
+	var hits int32
+
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"errors":[{"code":"MANIFEST_UNKNOWN"}]}`))
+	}))
+	defer srv.Close()
+
+	client := newTestClient(srv)
+	image := testImage(srv, "user/missing:latest")
+
+	for i := 0; i < 3; i++ {
+		if _, err := client.FetchDigest(context.Background(), image); err == nil {
+			t.Fatalf("call %d: expected error", i)
+		}
+	}
+
+	if got := atomic.LoadInt32(&hits); got != 1 {
+		t.Errorf("manifest requests = %d, want 1 (failures must be negatively cached)", got)
+	}
+}
+
+func TestFetchDigest_RefreshesExpiredToken(t *testing.T) {
+	const goodToken = "fresh-token"
+	var manifestHits int32
+
+	var srv *httptest.Server
+	srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/token") {
+			_ = json.NewEncoder(w).Encode(TokenResponse{Token: goodToken, ExpiresIn: 300})
+			return
+		}
+		atomic.AddInt32(&manifestHits, 1)
+		if r.Header.Get("Authorization") != "Bearer "+goodToken {
+			w.Header().Set("WWW-Authenticate",
+				`Bearer realm="`+srv.URL+`/token",service="test",scope="repository:user/app:pull"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Docker-Content-Digest", "sha256:afterrefresh")
+		_ = json.NewEncoder(w).Encode(ManifestResponse{SchemaVersion: 2})
+	}))
+	defer srv.Close()
+
+	client := newTestClient(srv)
+	host := strings.TrimPrefix(srv.URL, "https://")
+
+	// Seed an already-expired token: the client must discard it and re-auth
+	// rather than returning a hard 401.
+	client.setCachedToken(host+"/user/app", "stale-token", -time.Minute)
+
+	digest, err := client.FetchDigest(context.Background(), testImage(srv, "user/app:latest"))
+	if err != nil {
+		t.Fatalf("expected token refresh to recover, got error: %v", err)
+	}
+	if digest != "sha256:afterrefresh" {
+		t.Errorf("digest = %q, want sha256:afterrefresh", digest)
+	}
+}
+
+func TestFetchDigest_DoesNotCacheCancelledRequests(t *testing.T) {
+	var hits int32
+
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.Header().Set("Docker-Content-Digest", "sha256:ok")
+		_ = json.NewEncoder(w).Encode(ManifestResponse{SchemaVersion: 2})
+	}))
+	defer srv.Close()
+
+	client := newTestClient(srv)
+	image := testImage(srv, "user/app:latest")
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := client.FetchDigest(cancelled, image); err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+
+	digest, err := client.FetchDigest(context.Background(), image)
+	if err != nil {
+		t.Fatalf("cancellation poisoned the cache: %v", err)
+	}
+	if digest != "sha256:ok" {
+		t.Errorf("digest = %q, want sha256:ok", digest)
+	}
+}
+
+func TestCachedToken_RespectsExpiry(t *testing.T) {
+	client := NewClient(logging.Default())
+
+	client.setCachedToken("docker.io/library/nginx", "live", time.Minute)
+	if tok, ok := client.cachedToken("docker.io/library/nginx"); !ok || tok != "live" {
+		t.Errorf("cachedToken = (%q, %v), want (live, true)", tok, ok)
+	}
+
+	// A non-positive TTL means "registry did not say", so it falls back to the
+	// default lifetime rather than expiring immediately.
+	client.setCachedToken("docker.io/library/nginx", "no-ttl", 0)
+	if tok, ok := client.cachedToken("docker.io/library/nginx"); !ok || tok != "no-ttl" {
+		t.Errorf("cachedToken = (%q, %v), want (no-ttl, true)", tok, ok)
+	}
+
+	client.authCache["docker.io/library/nginx"] = cachedAuth{
+		token:   "dead",
+		expires: time.Now().Add(-time.Second),
+	}
+	if tok, ok := client.cachedToken("docker.io/library/nginx"); ok {
+		t.Errorf("cachedToken returned expired token %q", tok)
+	}
 }
 
 func TestImageReference_ManifestURL(t *testing.T) {
@@ -206,11 +358,11 @@ func TestImageReference_IsDockerHub(t *testing.T) {
 func TestNewClient(t *testing.T) {
 	logger := logging.Default()
 	client := NewClient(logger)
-	if client == nil {
-		t.Fatal("expected non-nil client")
-	}
 	if client.httpClient == nil {
 		t.Error("expected non-nil http client")
+	}
+	if client.digestTTL != DefaultDigestTTL {
+		t.Errorf("digestTTL = %v, want %v", client.digestTTL, DefaultDigestTTL)
 	}
 
 	// Verify it doesn't panic on a FetchDigest with invalid image

@@ -236,7 +236,8 @@ docker run -d \
 | `BULWARK_WEB_TOKEN` | — | Bearer token for writes |
 | `BULWARK_UI_ADDR` | `:8080` | Listen address |
 | `BULWARK_UI_DIST` | `web/dist` | Built UI assets path |
-| `BULWARK_PLAN_CACHE_TTL` | `15s` | Plan/overview cache TTL |
+| `BULWARK_PLAN_CACHE_TTL` | `5m` | Plan/overview cache TTL (keep ≥ UI poll interval) |
+| `BULWARK_DIGEST_CACHE_TTL` | `10m` | How long resolved remote digests are reused |
 | `BULWARK_WEB_WRITE_RPS` | `1` | Write rate limit (req/s) |
 | `BULWARK_WEB_WRITE_BURST` | `3` | Write burst capacity |
 
