@@ -3,6 +3,7 @@ package registry
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,13 +17,47 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
+const (
+	// DefaultDigestTTL is how long a successfully resolved digest is reused.
+	// Digest lookups are the dominant source of registry traffic, and tags move
+	// far more slowly than the UI polls, so caching them is what keeps Bulwark
+	// under Docker Hub's anonymous pull limit.
+	DefaultDigestTTL = 10 * time.Minute
+	// DefaultDigestErrorTTL is the (shorter) reuse window for failed lookups.
+	// Unresolvable images — private repos, dangling references — otherwise
+	// re-fail on every single plan build.
+	DefaultDigestErrorTTL = 5 * time.Minute
+	// defaultTokenTTL is used when a registry omits expires_in.
+	defaultTokenTTL = 5 * time.Minute
+	// tokenExpiryMargin renews tokens slightly early to avoid racing expiry.
+	tokenExpiryMargin = 30 * time.Second
+)
+
+type cachedAuth struct {
+	token   string
+	expires time.Time
+}
+
+type cachedDigest struct {
+	digest  string
+	err     error
+	expires time.Time
+}
+
 // Client handles registry operations
 type Client struct {
 	httpClient *http.Client
 	logger     *logging.Logger
+
 	authMu     sync.RWMutex
-	authCache  map[string]string // registry/repository -> token
+	authCache  map[string]cachedAuth // registry/repository -> token
 	tokenGroup singleflight.Group
+
+	digestMu     sync.RWMutex
+	digestCache  map[string]cachedDigest // registry/repository:reference -> digest
+	digestTTL    time.Duration
+	digestErrTTL time.Duration
+	digestGroup  singleflight.Group
 }
 
 // NewClient creates a new registry client
@@ -31,9 +66,34 @@ func NewClient(logger *logging.Logger) *Client {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		logger:    logger.WithComponent("registry"),
-		authCache: make(map[string]string),
+		logger:       logger.WithComponent("registry"),
+		authCache:    make(map[string]cachedAuth),
+		digestCache:  make(map[string]cachedDigest),
+		digestTTL:    DefaultDigestTTL,
+		digestErrTTL: DefaultDigestErrorTTL,
 	}
+}
+
+// WithDigestTTL overrides how long resolved digests are cached. A non-positive
+// TTL disables digest caching.
+func (c *Client) WithDigestTTL(ttl time.Duration) *Client {
+	c.digestMu.Lock()
+	defer c.digestMu.Unlock()
+	c.digestTTL = ttl
+	if ttl <= 0 {
+		c.digestErrTTL = 0
+	} else if c.digestErrTTL > ttl {
+		c.digestErrTTL = ttl
+	}
+	return c
+}
+
+// InvalidateDigests drops every cached digest so the next lookup hits the
+// registry. Backs the manual refresh action in the UI.
+func (c *Client) InvalidateDigests() {
+	c.digestMu.Lock()
+	defer c.digestMu.Unlock()
+	c.digestCache = make(map[string]cachedDigest)
 }
 
 // ManifestResponse represents a Docker registry manifest
@@ -81,10 +141,10 @@ type TokenResponse struct {
 	ExpiresIn   int    `json:"expires_in"`
 }
 
-// FetchDigest fetches the digest for an image
+// FetchDigest fetches the digest for an image, reusing a cached result when
+// one is still fresh. Concurrent lookups of the same image collapse into a
+// single registry request.
 func (c *Client) FetchDigest(ctx context.Context, image string) (string, error) {
-	start := time.Now()
-
 	ref, err := ParseImageReference(image)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse image reference: %w", err)
@@ -98,6 +158,33 @@ func (c *Client) FetchDigest(ctx context.Context, image string) (string, error) 
 	if ref.Tag != "" && ref.Digest != "" {
 		ref.Digest = ""
 	}
+
+	cacheKey := ref.CacheKey()
+	if digest, err, ok := c.cachedDigest(cacheKey); ok {
+		return digest, err
+	}
+
+	type digestOutcome struct {
+		digest string
+		err    error
+	}
+
+	result, _, _ := c.digestGroup.Do(cacheKey, func() (interface{}, error) {
+		if digest, err, ok := c.cachedDigest(cacheKey); ok {
+			return digestOutcome{digest: digest, err: err}, nil
+		}
+
+		digest, err := c.fetchDigestUncached(ctx, ref)
+		c.setCachedDigest(cacheKey, digest, err)
+		return digestOutcome{digest: digest, err: err}, nil
+	})
+
+	outcome := result.(digestOutcome)
+	return outcome.digest, outcome.err
+}
+
+func (c *Client) fetchDigestUncached(ctx context.Context, ref *ImageReference) (string, error) {
+	start := time.Now()
 
 	defer func() {
 		metrics.DigestFetchDuration.WithLabelValues(ref.Registry).Observe(time.Since(start).Seconds())
@@ -117,7 +204,7 @@ func (c *Client) FetchDigest(ctx context.Context, image string) (string, error) 
 	}
 
 	// Fetch manifest
-	manifest, digest, err := c.fetchManifest(ctx, ref, token)
+	manifest, digest, err := c.fetchManifest(ctx, ref, token, true)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch manifest: %w", err)
 	}
@@ -157,8 +244,11 @@ func (c *Client) FetchDigest(ctx context.Context, image string) (string, error) 
 	return "", fmt.Errorf("no digest found in manifest")
 }
 
-// fetchManifest fetches the manifest from the registry
-func (c *Client) fetchManifest(ctx context.Context, ref *ImageReference, token string) (*ManifestResponse, string, error) {
+// fetchManifest fetches the manifest from the registry. When allowRetry is set
+// a 401 triggers one re-authentication attempt: cached tokens are short-lived
+// (Docker Hub issues 5-minute tokens), so an expired token must be replaced
+// rather than reported as an auth failure.
+func (c *Client) fetchManifest(ctx context.Context, ref *ImageReference, token string, allowRetry bool) (*ManifestResponse, string, error) {
 	manifestURL := ref.ManifestURL()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", manifestURL, nil)
@@ -180,14 +270,24 @@ func (c *Client) fetchManifest(ctx context.Context, ref *ImageReference, token s
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to fetch manifest: %w", err)
 	}
-	if resp.StatusCode == http.StatusUnauthorized && token == "" {
+	if resp.StatusCode == http.StatusUnauthorized && allowRetry {
 		challenge := resp.Header.Get("WWW-Authenticate")
 		_ = resp.Body.Close()
+
+		cacheKey := fmt.Sprintf("%s/%s", ref.Registry, ref.Repository)
+		// Whatever we sent was rejected; never hand it out again.
+		c.invalidateToken(cacheKey)
+
 		if challenge != "" {
-			if newToken, err := c.getTokenFromChallenge(ctx, ref, challenge); err == nil && newToken != "" {
-				cacheKey := fmt.Sprintf("%s/%s", ref.Registry, ref.Repository)
-				c.setCachedToken(cacheKey, newToken)
-				return c.fetchManifest(ctx, ref, newToken)
+			if newToken, ttl, err := c.getTokenFromChallenge(ctx, ref, challenge); err == nil && newToken != "" {
+				c.setCachedToken(cacheKey, newToken, ttl)
+				return c.fetchManifest(ctx, ref, newToken, false)
+			}
+		}
+		if ref.IsDockerHub() {
+			if newToken, ttl, err := c.getDockerHubToken(ctx, ref); err == nil && newToken != "" && newToken != token {
+				c.setCachedToken(cacheKey, newToken, ttl)
+				return c.fetchManifest(ctx, ref, newToken, false)
 			}
 		}
 		return nil, "", fmt.Errorf("unexpected status code %d", resp.StatusCode)
@@ -211,11 +311,11 @@ func (c *Client) fetchManifest(ctx context.Context, ref *ImageReference, token s
 	return &manifest, digest, nil
 }
 
-func (c *Client) getTokenFromChallenge(ctx context.Context, ref *ImageReference, challenge string) (string, error) {
+func (c *Client) getTokenFromChallenge(ctx context.Context, ref *ImageReference, challenge string) (string, time.Duration, error) {
 	params := parseAuthChallenge(challenge)
 	realm := params["realm"]
 	if realm == "" {
-		return "", fmt.Errorf("auth challenge missing realm")
+		return "", 0, fmt.Errorf("auth challenge missing realm")
 	}
 
 	query := url.Values{}
@@ -239,35 +339,46 @@ func (c *Client) getTokenFromChallenge(ctx context.Context, ref *ImageReference,
 		tokenURL = tokenURL + separator + encoded
 	}
 
+	return c.requestToken(ctx, tokenURL)
+}
+
+// requestToken performs a registry token request and reports the token along
+// with how long it stays valid.
+func (c *Client) requestToken(ctx context.Context, tokenURL string) (string, time.Duration, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", tokenURL, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to create token request: %w", err)
+		return "", 0, fmt.Errorf("failed to create token request: %w", err)
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch token: %w", err)
+		return "", 0, fmt.Errorf("failed to fetch token: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
+		return "", 0, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
 	}
 
 	var tokenResp TokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return "", fmt.Errorf("failed to decode token response: %w", err)
+		return "", 0, fmt.Errorf("failed to decode token response: %w", err)
+	}
+
+	ttl := defaultTokenTTL
+	if tokenResp.ExpiresIn > 0 {
+		ttl = time.Duration(tokenResp.ExpiresIn) * time.Second
 	}
 
 	if tokenResp.Token != "" {
-		return tokenResp.Token, nil
+		return tokenResp.Token, ttl, nil
 	}
 	if tokenResp.AccessToken != "" {
-		return tokenResp.AccessToken, nil
+		return tokenResp.AccessToken, ttl, nil
 	}
 
-	return "", fmt.Errorf("no token in response")
+	return "", 0, fmt.Errorf("no token in response")
 }
 
 func parseAuthChallenge(header string) map[string]string {
@@ -314,11 +425,11 @@ func (c *Client) getAuthToken(ctx context.Context, ref *ImageReference) (string,
 				return token, nil
 			}
 
-			token, err := c.getDockerHubToken(ctx, ref)
+			token, ttl, err := c.getDockerHubToken(ctx, ref)
 			if err != nil {
 				return "", err
 			}
-			c.setCachedToken(cacheKey, token)
+			c.setCachedToken(cacheKey, token, ttl)
 			return token, nil
 		})
 		if err != nil {
@@ -335,19 +446,72 @@ func (c *Client) cachedToken(cacheKey string) (string, bool) {
 	c.authMu.RLock()
 	defer c.authMu.RUnlock()
 
-	token, ok := c.authCache[cacheKey]
-	return token, ok
+	entry, ok := c.authCache[cacheKey]
+	if !ok || time.Now().After(entry.expires) {
+		return "", false
+	}
+	return entry.token, true
 }
 
-func (c *Client) setCachedToken(cacheKey, token string) {
+func (c *Client) setCachedToken(cacheKey, token string, ttl time.Duration) {
+	if ttl <= 0 {
+		ttl = defaultTokenTTL
+	}
+	// Renew a little before the registry would reject the token.
+	if ttl > tokenExpiryMargin {
+		ttl -= tokenExpiryMargin
+	}
+
 	c.authMu.Lock()
 	defer c.authMu.Unlock()
 
-	c.authCache[cacheKey] = token
+	c.authCache[cacheKey] = cachedAuth{token: token, expires: time.Now().Add(ttl)}
+}
+
+func (c *Client) invalidateToken(cacheKey string) {
+	c.authMu.Lock()
+	defer c.authMu.Unlock()
+
+	delete(c.authCache, cacheKey)
+}
+
+func (c *Client) cachedDigest(cacheKey string) (string, error, bool) {
+	c.digestMu.RLock()
+	defer c.digestMu.RUnlock()
+
+	entry, ok := c.digestCache[cacheKey]
+	if !ok || time.Now().After(entry.expires) {
+		return "", nil, false
+	}
+	return entry.digest, entry.err, true
+}
+
+func (c *Client) setCachedDigest(cacheKey, digest string, err error) {
+	c.digestMu.Lock()
+	defer c.digestMu.Unlock()
+
+	ttl := c.digestTTL
+	if err != nil {
+		// A cancelled or timed-out request says nothing about the image; caching
+		// it would let one aborted HTTP request suppress lookups for minutes.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
+		ttl = c.digestErrTTL
+	}
+	if ttl <= 0 {
+		return
+	}
+
+	c.digestCache[cacheKey] = cachedDigest{
+		digest:  digest,
+		err:     err,
+		expires: time.Now().Add(ttl),
+	}
 }
 
 // getDockerHubToken gets a token for Docker Hub
-func (c *Client) getDockerHubToken(ctx context.Context, ref *ImageReference) (string, error) {
+func (c *Client) getDockerHubToken(ctx context.Context, ref *ImageReference) (string, time.Duration, error) {
 	// Docker Hub token URL
 	tokenURL := "https://auth.docker.io/token"
 
@@ -356,35 +520,7 @@ func (c *Client) getDockerHubToken(ctx context.Context, ref *ImageReference) (st
 	params.Set("service", "registry.docker.io")
 	params.Set("scope", fmt.Sprintf("repository:%s:pull", ref.Repository))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", tokenURL+"?"+params.Encode(), nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create token request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to fetch token: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
-	}
-
-	var tokenResp TokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return "", fmt.Errorf("failed to decode token response: %w", err)
-	}
-
-	if tokenResp.Token != "" {
-		return tokenResp.Token, nil
-	}
-	if tokenResp.AccessToken != "" {
-		return tokenResp.AccessToken, nil
-	}
-
-	return "", fmt.Errorf("no token in response")
+	return c.requestToken(ctx, tokenURL+"?"+params.Encode())
 }
 
 // CompareDigests compares two digests and returns true if they're different

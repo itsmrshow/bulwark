@@ -24,6 +24,14 @@ func ParseImageReference(image string) (*ImageReference, error) {
 		return nil, fmt.Errorf("empty image reference")
 	}
 
+	// Containers created from a dangling image report a bare digest with no
+	// repository (e.g. "sha256:9792..."). Parsing that as a normal reference
+	// yields docker.io/library/sha256, which every registry answers with 401.
+	// There is nothing to resolve, so reject it before issuing any request.
+	if !strings.Contains(image, "/") && strings.HasPrefix(image, "sha256:") {
+		return nil, fmt.Errorf("unresolvable image reference %q: bare digest without a repository", image)
+	}
+
 	ref := &ImageReference{
 		Registry: "docker.io", // Default to Docker Hub
 		Tag:      "latest",    // Default tag
@@ -121,6 +129,16 @@ func (r *ImageReference) ManifestURL() string {
 	}
 
 	return fmt.Sprintf("https://%s/v2/%s/manifests/%s", registry, r.Repository, reference)
+}
+
+// CacheKey identifies the exact manifest this reference resolves to, so two
+// services sharing an image share a cache entry.
+func (r *ImageReference) CacheKey() string {
+	reference := r.Tag
+	if r.Digest != "" {
+		reference = r.Digest
+	}
+	return fmt.Sprintf("%s/%s:%s", r.Registry, r.Repository, reference)
 }
 
 // AuthURL returns the auth URL for this registry

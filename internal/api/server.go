@@ -12,6 +12,7 @@ import (
 	"github.com/itsmrshow/bulwark/internal/logging"
 	"github.com/itsmrshow/bulwark/internal/notify"
 	"github.com/itsmrshow/bulwark/internal/planner"
+	"github.com/itsmrshow/bulwark/internal/registry"
 	"github.com/itsmrshow/bulwark/internal/state"
 	"golang.org/x/sync/singleflight"
 	"golang.org/x/time/rate"
@@ -28,6 +29,10 @@ type Server struct {
 	planGroup    singleflight.Group
 	sessions     *sessionStore
 	notify       *notify.Manager
+	// registry is shared across every plan build so its auth-token and digest
+	// caches survive between requests. Constructing one per build discarded
+	// both, turning each poll into a full re-fetch of every image.
+	registry *registry.Client
 }
 
 // NewServer constructs a new API server.
@@ -66,6 +71,7 @@ func NewServer(cfg Config, logger *logging.Logger) (*Server, error) {
 		writeLimiter: limiter,
 		planCache:    newPlanCache(cfg.PlanCacheTTL),
 		sessions:     newSessionStore(),
+		registry:     registry.NewClient(logger).WithDigestTTL(cfg.DigestCacheTTL),
 	}
 
 	settingsStore := notify.NewStore(cfg.ConfigPath, store, logger)
